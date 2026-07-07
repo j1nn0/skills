@@ -1,53 +1,44 @@
 # skills
 
-Portable agent skills for writing, editing, and maintaining agent behavior.
+個人用の agent skills 集。
+Claude Code をはじめ、SKILL.md 形式に対応した各種エージェントで使える。
 
-This repository keeps each skill as a portable directory. A skill should be understandable on its own, with its main instructions in `SKILL.md` and any required references, templates, examples, or scripts stored beside it.
+## インストール
 
-## Available Skills
+[skills CLI](https://github.com/vercel-labs/skills) でインストールする。
 
-| Skill | Description |
+```sh
+npx skills@latest add j1nn0/skills
+```
+
+特定のスキルだけ入れる場合は `-s` で指定する。
+
+```sh
+npx skills@latest add j1nn0/skills -s writing-ja
+```
+
+プロジェクト単位ではなくユーザー全体で使う場合は `-g` を付ける。
+
+```sh
+npx skills@latest add j1nn0/skills -g
+```
+
+## スキル一覧
+
+| スキル | 説明 |
 | --- | --- |
-| `writing-ja` | Self-contained Japanese writing and editing rules for blog posts, technical articles, and business documents. It combines argument structure, Japanese technical prose conventions, and human-sounding rewrite guidance, with conflict rules resolved against the j1nn0.com article style. |
+| [`writing-ja`](skills/writing-ja/SKILL.md) | 日本語記事の執筆・推敲・リライトの規範。文体、書式、論証の組み立て、AI臭い表現の除去までを1ファイルで完結させている。ブログ記事と技術記事が主対象で、メールや報告書などのですます調文書にも差分ルールで対応する。 |
+| [`blog-writing-guide-ja`](skills/blog-writing-guide-ja/SKILL.md) | 日本語技術ブログの企画・構成・品質基準・レビューのガイド。読者の疑問に沿った記事構成、タイトルと見出しの付け方、SEO、公開前レビューの観点を定める。文レベルの文体は `writing-ja` の担当なので、記事を書くときは併用する。 |
 
-## Repository Layout
+## リポジトリ構成
+
+`skills/` 直下の各ディレクトリが1つのスキル。
+それぞれ `SKILL.md` を起点とし、単体でコピーして使える状態を保つ。
 
 ```text
-.
-├── README.md
-├── AGENTS.md
-└── skills/
-    ├── AGENTS.md
-    └── writing-ja/
-        └── SKILL.md
+skills/
+├── writing-ja/
+│   └── SKILL.md
+└── blog-writing-guide-ja/
+    └── SKILL.md
 ```
-
-`skills/` is the canonical source directory. Each direct child of `skills/` is intended to be independently installable or copyable.
-
-If a local `.agents/` directory exists, treat it as development-only material. It is not the canonical source for published skills unless a task explicitly says so.
-
-## Skill Format
-
-Each skill lives under `skills/<skill-name>/` and uses a lowercase kebab-case directory name.
-
-The entry point is always `SKILL.md`. It should include YAML front matter with at least `name` and `description`, followed by concise instructions that explain when to use the skill, what to read, and what output to produce.
-
-Supporting files belong inside the same skill directory so the skill remains portable. Do not place `AGENTS.md` inside a distributable skill directory because installers may copy that directory into another project.
-
-No package manager, build system, automated test runner, or skill lock file is currently maintained in this repository.
-
-## Maintenance
-
-Before and after edits, check the working tree.
-
-```sh
-git status --short
-```
-
-After adding, moving, or removing skills, verify the available entry points.
-
-```sh
-find skills -name SKILL.md -print
-```
-
-For wording changes, read the rendered Markdown structure and confirm the skill still works without relying on files outside its own directory.

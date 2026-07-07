@@ -14,6 +14,7 @@ No standalone files are expected here. Put each skill's entry point in its own `
 
 | Directory | Purpose |
 |-----------|---------|
+| `blog-writing-guide-ja/` | Japanese tech-blog planning, structure, and review-quality guide. |
 | `writing-ja/` | Japanese writing and editing skill. |
 
 ## For AI Agents
