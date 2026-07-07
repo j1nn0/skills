@@ -9,15 +9,14 @@ This repository stores portable agent skill definitions. Each skill is meant to 
 
 | File | Description |
 |------|-------------|
-| `README.md` | Minimal repository overview. |
-| `skills-lock.json` | Records locally installed skill sources and hashes when present. |
+| `README.md` | Repository overview and maintenance notes. |
+| `AGENTS.md` | Repository-level guidance for agents working here. |
 
 ## Subdirectories
 
 | Directory | Purpose |
 |-----------|---------|
 | `skills/` | Canonical skill definitions for this repository. See `skills/AGENTS.md`. |
-| `.agents/` | Local or vendored agent assets used during development; do not treat as canonical skill source unless the user asks. |
 
 ## For AI Agents
 
@@ -30,6 +29,7 @@ This repository stores portable agent skill definitions. Each skill is meant to 
 - Prefer concise Markdown with concrete trigger rules, scope boundaries, workflow steps, and output expectations.
 - Do not introduce package manifests, build tooling, or generated metadata unless the change requires it.
 - Treat untracked files as user work. Do not remove or rewrite them unless the user explicitly asks.
+- If a local `.agents/` directory appears, treat it as development-only material, not as the canonical source for published skills.
 
 ### Testing Requirements
 
@@ -54,5 +54,6 @@ This repository stores portable agent skill definitions. Each skill is meant to 
 ### External
 
 - No runtime dependencies, package manager, build system, or automated test runner are configured.
+- No lock file is currently maintained for installed skill sources.
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
