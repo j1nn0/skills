@@ -49,7 +49,7 @@ This repository stores portable agent skill definitions. Each skill is meant to 
 
 ### Internal
 
-- `skills/writing-ja/` and `skills/blog-writing-guide-ja/` are the current canonical skills in this repository. See `skills/AGENTS.md` for the full list.
+- `skills/writing-ja/`, `skills/blog-writing-guide-ja/`, and `skills/blog-ops/` are the current canonical skills in this repository. See `skills/AGENTS.md` for the full list.
 
 ### External
 
