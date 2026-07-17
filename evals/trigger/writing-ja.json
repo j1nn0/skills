@@ -1,0 +1,22 @@
+[
+  {"query":"content/posts/oauth-debug.md の本文だけを推敲して。API のエラー文、curl コマンド、front matter は変えずに、説明が回りくどい段落を直したい。", "should_trigger":true},
+  {"query":"この日本語の技術メモを読みやすくしてほしい。主張の根拠は足さず、語尾の単調さと『本記事では』みたいな前置きだけを整えて。", "should_trigger":true},
+  {"query":"障害報告の本文を常体にそろえたい。ログと時刻はそのままで、読者が原因と対応を追える文に直して。", "should_trigger":true},
+  {"query":"下の段落、AIっぽいと言われた。経験談を増やしたり熱意を盛ったりせず、ある情報だけで自然な日本語に推敲して。", "should_trigger":true},
+  {"query":"README ではなく、公開予定の技術記事の3段落だけをリライトしたい。コードブロックに触れず、具体性を落とさずに短くできる？", "should_trigger":true},
+  {"query":"社内 Wiki の設計判断を説明する日本語を直して。『堅牢』『柔軟』のような評価語が根拠なしに見えないか確認したい。", "should_trigger":true},
+  {"query":"ブログの本文を貼るので、事実・推測・自分の判断が混ざっている箇所だけを読み分けやすく整えてほしい。", "should_trigger":true},
+  {"query":"Zenn に出す記事を推敲して。見出し構成やタイトルはそのまま、各文のつながりと日本語のリズムだけ見て。", "should_trigger":true},
+  {"query":"この長い技術解説、段落ごとに何を言っているか分かる文にしたい。原文にない比較や結論は加えないで。", "should_trigger":true},
+  {"query":"記事末尾のまとめが直前の説明を繰り返している。既存の事実を保ったまま、文単位で直す案を出して。", "should_trigger":true},
+  {"query":"Laravel の認可処理を解説する記事のタイトル案を10個出して。検索されやすさも考慮して。", "should_trigger":false},
+  {"query":"このブログ記事、導入から結論までの章立てが弱い気がする。読者の疑問順に構成を作り直して。", "should_trigger":false},
+  {"query":"README のセットアップ手順を英語に翻訳して。コマンドは変えないで。", "should_trigger":false},
+  {"query":"この一文を敬語にして: デプロイは明日の朝に実施する。", "should_trigger":false},
+  {"query":"X に投稿する告知文を、記事 URL と一緒に140字くらいで3案作って。", "should_trigger":false},
+  {"query":"content/posts/new.md の front matter を作りたい。slug と tags の候補も決めて。", "should_trigger":false},
+  {"query":"障害報告の技術的な原因が妥当かレビューして。ログから仮説も立ててほしい。", "should_trigger":false},
+  {"query":"この PR の日本語コメントが失礼でないかだけ確認して。本文は書き換えなくていい。", "should_trigger":false},
+  {"query":"Hugo の summary が OGP に出ない理由を調べて設定を直して。", "should_trigger":false},
+  {"query":"技術書の章全体を一文一行の形式に整形して、脚注の置き方も統一して。", "should_trigger":false}
+]

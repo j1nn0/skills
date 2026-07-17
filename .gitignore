@@ -1,0 +1,19 @@
+# Python bytecode and tool caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Generated trigger-evaluation results
+evals/trigger/results/
+
+# Local Python environments
+.venv/
+venv/
+
+# Operating-system metadata
+.DS_Store

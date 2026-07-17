@@ -40,6 +40,18 @@ Some skills are derived from third-party works and are subject to their own
 license and attribution requirements. See the `LICENSE`, `SOURCES.md`, and,
 where present, `NOTICE` files in each skill directory for the applicable terms.
 
+## 開発時の検証
+
+外部依存なしで、スキルの front matter と同梱スクリプトを検証できる。
+
+```sh
+python3 -m unittest discover -s tests
+```
+
+GitHub Actions でも同じテストを実行する。ブログリポジトリに適用する `blog-ops` の記事検査は、スキルディレクトリ内の `scripts/check_posts.py` を実行する。タグ数とタグ表記の既定は、対象リポジトリの規約に合わせて CLI オプションで変更できる。
+
+`evals/trigger/` には、各スキルの description を評価するための should-trigger / should-not-trigger のテストセットを置く。description を変更する前に内容をレビューし、skill-creator の評価ループへ渡す。
+
 ## リポジトリ構成
 
 `skills/` 直下の各ディレクトリが1つのスキル。
@@ -49,6 +61,8 @@ where present, `NOTICE` files in each skill directory for the applicable terms.
 skills/
 ├── writing-ja/
 │   ├── SKILL.md
+│   ├── references/
+│   ├── scripts/
 │   ├── LICENSE
 │   └── SOURCES.md
 ├── blog-writing-guide-ja/
@@ -59,4 +73,6 @@ skills/
     ├── SKILL.md
     ├── references/
     └── scripts/
+tests/
+└── ...
 ```

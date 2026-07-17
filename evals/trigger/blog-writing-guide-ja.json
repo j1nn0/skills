@@ -1,0 +1,22 @@
+[
+  {"query":"content/posts/redis-migration.md の下書きをレビューして。タイトル、導入、見出し、結論が読者の疑問順になっているかを記事全体で見てほしい。", "should_trigger":true},
+  {"query":"MySQL のインデックス検証を記事にしたい。誰向けに何を主張する記事かまだ曖昧なので、構成から一緒に固めて。", "should_trigger":true},
+  {"query":"Zenn に出す移行記録の案がある。SEO のために FAQ を足すべきか、記事の対象範囲に照らして判断してほしい。", "should_trigger":true},
+  {"query":"この技術ブログ、内容は正しいが共有したくなる記事になっていない気がする。独自の判断とトレードオフが伝わる構成にレビューして。", "should_trigger":true},
+  {"query":"新しい監視機能のリリース記事を書いている。changelog の焼き直しにせず、エンジニアが判断に使える記事構成を考えたい。", "should_trigger":true},
+  {"query":"下書きの見出しが『背景』『実装』『結果』『まとめ』だけになった。記事全体の主張が見出しだけで追えるように直して。", "should_trigger":true},
+  {"query":"個人ブログで障害のポストモーテムを書く。公開してよい範囲を守りつつ、時系列と再発防止が読み取れる構成を作りたい。", "should_trigger":true},
+  {"query":"AI エージェントを試した体験記のタイトルと導入を相談したい。実際に分かった制約を主役にしたいが、どこから始めるべき？", "should_trigger":true},
+  {"query":"この記事には『この記事で分かること』を入れるべきか迷っている。長い比較記事なので、導入と読者の判断材料を見て決めて。", "should_trigger":true},
+  {"query":"企業テックブログの草稿をレビューして。製品を褒めるだけの文章になっていないか、技術的な主張と根拠を中心に見て。", "should_trigger":true},
+  {"query":"本文の2段落だけ、もっと自然な日本語にリライトして。タイトルや構成には触れないで。", "should_trigger":false},
+  {"query":"Hugo の新規記事を作るので slug、date、tags、画像の置き場所を決めて。", "should_trigger":false},
+  {"query":"ブログ公開後に X へ流す短い告知文を作りたい。URL はこれ。", "should_trigger":false},
+  {"query":"README の導入文を、初めて使う人向けに一段落だけ書き換えて。", "should_trigger":false},
+  {"query":"この TypeScript の関数名とコメントをレビューして。", "should_trigger":false},
+  {"query":"記事の front matter にある summary を60字くらいに短くして。", "should_trigger":false},
+  {"query":"既存記事のタグを development_environment から dev_env に改名したい。リダイレクトも必要？", "should_trigger":false},
+  {"query":"技術書の章を厳密な論証になるように推敲して。脚注と引用の書式も整えたい。", "should_trigger":false},
+  {"query":"社内向けにサービスのリリースノートを書いて。機能一覧と既知の制約を箇条書きにして。", "should_trigger":false},
+  {"query":"この記事のリンク切れがないか調べて、Hugo ビルドも実行して。", "should_trigger":false}
+]
