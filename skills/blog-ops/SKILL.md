@@ -24,6 +24,7 @@ Hugo ブログのリポジトリでの作業はすべてここから始める。
 | 本文の執筆・文単位の推敲・文体 | `writing-ja` スキル(blog-writing-guide-ja と併用する) |
 | 新規記事のファイル準備(スラッグ、front matter、タグ選定、画像配置) | `references/new-post.md` |
 | 記事の公開・コミット前の確認 | `references/publish-check.md` |
+| 記事公開後の SNS 告知文 | `references/social-announcement.md` |
 | タグの追加・改名・削除、リダイレクト管理 | `references/tags.md` |
 | 作業規約(スコープ制御、コーディングスタイル、コミット、セキュリティ) | `references/conventions.md` |
 
@@ -47,13 +48,16 @@ Hugo ブログのリポジトリでの作業はすべてここから始める。
 
 ## 検査スクリプト
 
-front matter とタグ規約の機械的な検査は `scripts/check_posts.py` が行う。リポジトリルートで実行する。
+front matter とタグ規約の機械的な検査は、このスキルディレクトリ内の `scripts/check_posts.py` が行う。対象ブログのリポジトリルートをカレントディレクトリにして実行する。
 
 ```bash
-python3 .agents/skills/blog-ops/scripts/check_posts.py
+python3 "$SKILL_DIR/scripts/check_posts.py"
 ```
 
-検査内容: front matter の必須フィールド、ファイル名・スラッグ規約、タグの表記規約(小文字+アンダースコア)、タグ数(3〜5個)、タグページ `content/tags/<tag>/_index.md` の有無、孤児タグページ、スラッグ重複。
+`SKILL_DIR` はこのスキルをインストールした `blog-ops` ディレクトリを指す。
+
+既定の検査内容: front matter の必須フィールド、フラット記事とページバンドルのスラッグ規約、タグの表記規約(小文字+アンダースコア)、タグ数(3〜5個)、タグページ `content/tags/<tag>/_index.md` の有無、孤児タグページ、スラッグ重複、本文の `/images/...` と `/posts/<slug>/` の実在、過去日付の `draft: true`。
+タグ数とタグ表記は汎用の既定であり、サイト側の `AGENTS.md` に別規約があれば CLI オプションで合わせる。`--min-tags`、`--max-tags`、`--tag-pattern` の使い方は `--help` で確認する。
 
 ERROR は修正必須、WARN は判断のうえ対応する(既存記事の WARN を頼まれていないのに直さない — スコープ制御)。
 
