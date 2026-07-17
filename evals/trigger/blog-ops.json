@@ -10,13 +10,13 @@
   {"query":"記事を出した後の SNS 告知文も含めて、ブログの公開フローを最後まで整えたい。投稿自体はまだしない。", "should_trigger":true},
   {"query":"content/posts に page bundle の index.md を増やした。通常の .md 記事と同じように front matter や画像を検査できるようにしたい。", "should_trigger":true},
   {"query":"Zenn の下書き全体をレビューして、タイトルと見出しを改善して。Hugo やリポジトリ操作は不要。", "should_trigger":false},
-  {"query":"既存の Hugo テーマの CSS で、モバイルだけ見出しの余白を狭くする方法を実装して。", "should_trigger":false},
+  {"query":"React の管理画面で、モバイルだけ見出しの余白を狭くする CSS を実装して。ブログや Hugo のリポジトリではない。", "should_trigger":false},
   {"query":"この日本語段落を AI っぽくない文にリライトして。記事全体の構成は変えないで。", "should_trigger":false},
   {"query":"WordPress から Ghost へ記事を移行する計画を作って。", "should_trigger":false},
   {"query":"このリンク一覧から404だけを探す Python スクリプトを書いて。", "should_trigger":false},
   {"query":"X の API を使って予約投稿する Node.js コードを実装して。", "should_trigger":false},
   {"query":"Astro のコンテンツコレクションに新しい MDX 記事を追加する手順を教えて。", "should_trigger":false},
   {"query":"技術書の章を Markdown に変換して、脚注リンクを保って。", "should_trigger":false},
-  {"query":"ブログのアクセス解析を GA4 から Plausible に切り替えたい。", "should_trigger":false},
-  {"query":"Hugo サイトに検索機能を付けるため、Pagefind を導入して CI でビルドする設定を書いて。", "should_trigger":false}
+  {"query":"Laravel 製の社内ダッシュボードのアクセス解析を GA4 から Plausible に切り替えたい。ブログや静的サイトの運用は関係ない。", "should_trigger":false},
+  {"query":"VitePress の社内ドキュメントに Pagefind を導入し、CI でビルドする設定を書いて。Hugo やブログのリポジトリではない。", "should_trigger":false}
 ]

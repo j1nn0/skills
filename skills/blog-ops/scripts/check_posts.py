@@ -116,6 +116,16 @@ def is_past_date(value):
         return False
 
 
+def is_valid_iso_date(value):
+    """DATE_RE に合う日付が実在する日時かを返す。"""
+    try:
+        normalized = str(value).replace("Z", "+00:00")
+        datetime.fromisoformat(normalized)
+    except ValueError:
+        return False
+    return True
+
+
 def static_image_path(root, url):
     """/images/ URL を static 内の安全なパスへ対応付ける。"""
     static_dir = (root / "static").resolve()
@@ -175,8 +185,10 @@ def inspect(root, settings):
         for field in ("title", "date"):
             if not front_matter.get(field):
                 problems.append(("ERROR", rel, f"front matter に {field} がない"))
-        if front_matter.get("date") and not DATE_RE.match(str(front_matter["date"])):
-            problems.append(("WARN", rel, f"date が Hugo で一般的な ISO 8601 形式でない: {front_matter['date']}"))
+        if front_matter.get("date"):
+            date_value = str(front_matter["date"])
+            if not DATE_RE.match(date_value) or not is_valid_iso_date(date_value):
+                problems.append(("WARN", rel, f"date が Hugo で一般的な ISO 8601 形式でない: {front_matter['date']}"))
         if "draft" not in front_matter:
             problems.append(("WARN", rel, "draft フィールドがない(公開状態が不明瞭になる)"))
         elif str(front_matter["draft"]).lower() == "true" and is_past_date(front_matter.get("date")):

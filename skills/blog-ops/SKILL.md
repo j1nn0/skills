@@ -56,7 +56,7 @@ python3 "$SKILL_DIR/scripts/check_posts.py"
 
 `SKILL_DIR` はこのスキルをインストールした `blog-ops` ディレクトリを指す。
 
-既定の検査内容: front matter の必須フィールド、フラット記事とページバンドルのスラッグ規約、タグの表記規約(小文字+アンダースコア)、タグ数(3〜5個)、タグページ `content/tags/<tag>/_index.md` の有無、孤児タグページ、スラッグ重複、本文の `/images/...` と `/posts/<slug>/` の実在、過去日付の `draft: true`。
+既定の検査内容: front matter の必須フィールド、フラット記事とページバンドルのスラッグ規約、タグの表記規約(小文字+アンダースコア)、タグ数(3〜5個)、タグページ `content/tags/<tag>/_index.md` の有無、孤児タグページ、スラッグ重複、本文の inline Markdown 形式の `/images/...` と `/posts/<slug>/` の実在、過去日付の `draft: true`。
 タグ数とタグ表記は汎用の既定であり、サイト側の `AGENTS.md` に別規約があれば CLI オプションで合わせる。`--min-tags`、`--max-tags`、`--tag-pattern` の使い方は `--help` で確認する。
 
 ERROR は修正必須、WARN は判断のうえ対応する(既存記事の WARN を頼まれていないのに直さない — スコープ制御)。
