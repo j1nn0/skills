@@ -8,7 +8,13 @@ Parts of this skill are based on `gonta223/humanizer-ja`.
 - License: MIT
 - Changes: Reorganized for Japanese technical prose and integrated into an independent editing workflow.
 
-The original copyright and MIT license notice are preserved in `LICENSE`.
+The following MIT copyright notices are preserved in `LICENSE`:
+
+- Copyright (c) 2025 Siqi Chen (original: blader/humanizer)
+- Copyright (c) 2026 SuguruKun_ai (Japanese version: humanizer-ja)
+
+Copyright (c) 2026 j1nn0 applies to the modifications and original additions
+in this skill.
 
 ## k16shikano public Gist
 
@@ -18,6 +24,9 @@ Parts of this skill were derived from a public Gist by k16shikano.
 - License declaration: https://gist.github.com/k16shikano/67625f2a7d96e3bbdfae8d571a936063
 - License: The Unlicense
 - Changes: Selected technical-writing concepts were reorganized and integrated into the editing workflow.
+
+The Unlicense does not require retaining a copyright or license notice, so its
+text is not included in `LICENSE`.
 
 ## Original work
 

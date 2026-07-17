@@ -11,8 +11,9 @@ This skill is based on `blog-writing-guide` from `getsentry/skills`.
 
 The Apache License, Version 2.0 text is provided in `LICENSE`.
 
-Copyright for the original work remains with its respective copyright holders.
-Copyright for new modifications and original additions remains with their respective author.
+Copyright 2025 Functional Software, Inc. dba Sentry is retained for the
+original work. Copyright 2026 j1nn0 applies to the modifications and original
+additions in this skill.
 
 ## Independence and trademarks
 
