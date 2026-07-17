@@ -27,9 +27,18 @@ npx skills@latest add j1nn0/skills -g
 
 | スキル | 説明 |
 | --- | --- |
-| [`writing-ja`](skills/writing-ja/SKILL.md) | 日本語記事の執筆・推敲・リライトの規範。文体、書式、論証の組み立て、AI臭い表現の除去までを1ファイルで完結させている。ブログ記事と技術記事が主対象で、メールや報告書などのですます調文書にも差分ルールで対応する。 |
+| [`writing-ja`](skills/writing-ja/SKILL.md) | 日本語の技術記事、ブログ記事、解説文の本文を執筆・推敲するスキル。事実関係と書き手の声を保ちながら、論理、具体性、文の読みやすさを整える。 |
 | [`blog-writing-guide-ja`](skills/blog-writing-guide-ja/SKILL.md) | 日本語技術ブログの企画・構成・品質基準・レビューのガイド。読者の疑問に沿った記事構成、タイトルと見出しの付け方、SEO、公開前レビューの観点を定める。文レベルの文体は `writing-ja` の担当なので、記事を書くときは併用する。 |
 | [`blog-ops`](skills/blog-ops/SKILL.md) | Hugo ブログ(PaperMod テーマ想定)の運用と執筆フロー全体の入口となるスキル。企画・執筆スキルへの振り分け、新規記事のセットアップ、公開前チェック、タグ管理、作業規約をまとめる。ブログリポジトリで記事やタグ・設定に触れる作業はここから始める。 |
+
+## License
+
+Original repository content is licensed under the MIT License unless a skill
+directory specifies a different license. This includes `blog-ops`.
+
+Some skills are derived from third-party works and are subject to their own
+license and attribution requirements. See the `LICENSE`, `SOURCES.md`, and,
+where present, `NOTICE` files in each skill directory for the applicable terms.
 
 ## リポジトリ構成
 
@@ -39,9 +48,13 @@ npx skills@latest add j1nn0/skills -g
 ```text
 skills/
 ├── writing-ja/
-│   └── SKILL.md
+│   ├── SKILL.md
+│   ├── LICENSE
+│   └── SOURCES.md
 ├── blog-writing-guide-ja/
-│   └── SKILL.md
+│   ├── SKILL.md
+│   ├── LICENSE
+│   └── SOURCES.md
 └── blog-ops/
     ├── SKILL.md
     ├── references/
