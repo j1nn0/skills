@@ -16,6 +16,7 @@ No standalone files are expected here. Put each skill's entry point in its own `
 |-----------|---------|
 | `blog-writing-guide-ja/` | Japanese tech-blog planning, structure, and review-quality guide. |
 | `writing-ja/` | Japanese writing and editing skill. |
+| `blog-idea-grilling/` | Japanese blog-idea development skill that produces a planning card. |
 | `blog-ops/` | Entry-point skill for Hugo blog operations: routes to planning/writing skills, new-post setup, pre-publish checks, tag management, and repo conventions. |
 
 ## For AI Agents

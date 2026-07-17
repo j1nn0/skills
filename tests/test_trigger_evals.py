@@ -7,9 +7,9 @@ EVALS = Path(__file__).parents[1] / "evals" / "trigger"
 
 
 class TriggerEvalTest(unittest.TestCase):
-    def test_each_skill_has_a_balanced_trigger_eval_set(self):
-        expected_skills = {"writing-ja", "blog-writing-guide-ja", "blog-ops"}
-        self.assertEqual(expected_skills, {path.stem for path in EVALS.glob("*.json")})
+    def test_optimization_scope_has_a_balanced_trigger_eval_set(self):
+        optimization_scope = {"writing-ja", "blog-writing-guide-ja", "blog-ops"}
+        self.assertEqual(optimization_scope, {path.stem for path in EVALS.glob("*.json")})
         for path in EVALS.glob("*.json"):
             with self.subTest(path=path):
                 data = json.loads(path.read_text(encoding="utf-8"))

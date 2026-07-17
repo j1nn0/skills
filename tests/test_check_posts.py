@@ -33,6 +33,26 @@ class CheckPostsTest(unittest.TestCase):
             self.assertFalse([problem for problem in problems if problem[0] == "ERROR"])
             self.assertFalse([problem for problem in problems if "date が" in problem[2]])
 
+    def test_warns_for_impossible_iso_date(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            write_post(
+                root,
+                "invalid-date.md",
+                "title: Example\ndate: 2026-02-30\ndraft: false\ntags: [one, two, three]",
+            )
+
+            _, _, problems = self.inspect(root)
+
+            self.assertIn(
+                (
+                    "WARN",
+                    "content/posts/invalid-date.md",
+                    "date が Hugo で一般的な ISO 8601 形式でない: 2026-02-30",
+                ),
+                problems,
+            )
+
     def test_reports_toml_as_unsupported(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
