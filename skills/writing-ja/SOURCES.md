@@ -32,6 +32,21 @@ The MIT copyright notice is preserved in `LICENSE`:
 
 - Copyright (c) 2026 coji
 
+`natural-japanese` credits five works as the origin of its readability layer.
+The list is reproduced as recorded in that repository and has not been checked
+against the books themselves:
+
+- 本多勝一『【新版】日本語の作文技術』朝日文庫
+- 木下是雄『理科系の作文技術』中公新書
+- 唐木元『新しい文章力の教室』インプレス
+- 結城浩『数学文章作法 基礎編・推敲編』ちくま学芸文庫
+- 石黒圭『文章は接続詞で決まる』光文社新書、『「接続詞」の技術』実務教育出版
+
+Of these, two correspond to material adopted here: word order and comma placement
+(本多), and the reader's three axes of knowledge, motivation, and purpose (結城).
+The paragraph and connective rules in this skill predate this port and are not
+derived from the other three.
+
 ## k16shikano public Gist
 
 Parts of this skill were derived from a public Gist by k16shikano.
