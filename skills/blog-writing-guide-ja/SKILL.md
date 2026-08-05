@@ -1,11 +1,6 @@
 ---
 name: blog-writing-guide-ja
-description: >
-  日本語の技術ブログ記事全体の企画、構成、執筆、レビューに使用する。
-  個人ブログ、Zenn、Qiita、企業テックブログの記事を対象とする。
-  Aboutページ、README、AGENTS.md、SNS投稿、メール、短い説明文、
-  front matterのみの編集には使用しない。
-  文レベルの推敲には、利用できる環境で writing-ja を併用できる。
+description: 日本語の技術ブログ記事全体の企画、構成、執筆、レビューに使用する。個人ブログ、Zenn、Qiita、企業テックブログの記事を対象とする。扱うのは記事の中身であり、slug、front matter、タグ、画像配置といったファイル準備には使用しない。Aboutページ、README、AGENTS.md、SNS投稿、メール、短い説明文も対象外である。文レベルの推敲には、利用できる環境で writing-ja を併用できる。
 ---
 
 <!--
