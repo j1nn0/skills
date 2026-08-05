@@ -1,3 +1,8 @@
+<!--
+「直す箇所を選ぶ」の節は `coji/natural-japanese`（MITライセンス）の
+改稿ガードを基に着想し、書き直したもの。See LICENSE and SOURCES.md for details.
+-->
+
 # 下書きのレビュー・編集
 
 大規模なリライトでは、詳細を読み直す前に見出しと各段落の先頭文だけを順に読む。
