@@ -21,6 +21,16 @@ class CheckStyleTest(unittest.TestCase):
         self.assertEqual(["太字による強調"], [candidate.reason for candidate in candidates])
         self.assertEqual(8, candidates[0].line)
 
+    def test_reports_hard_words_and_roundabout_phrasing(self):
+        text = "destroy()は冪等だ。\n検証を行うことが可能だ。\n`冪等` は対象外。\n"
+
+        candidates = check_style.find_candidates(text)
+
+        self.assertEqual(
+            [(1, "日常語にできる硬い漢語"), (2, "回りくどい言い回し"), (2, "回りくどい言い回し")],
+            [(candidate.line, candidate.reason) for candidate in candidates],
+        )
+
     def test_reports_structure_and_repetition_candidates(self):
         text = (
             "確認した。\n保存した。\n公開した。\n\n"
