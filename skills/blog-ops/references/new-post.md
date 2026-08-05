@@ -58,6 +58,7 @@ draft: true
 記事からの参照は `/images/<slug>/ファイル名` で、alt テキストは画面の内容を日本語で説明する(例: `![設定画面でプラグインを有効化している様子](/images/my-post/01-settings.webp)`)。
 
 フォーマットはスクリーンショットなら webp か png。既存記事に合わせる。
+何を図にするか、alt テキストの書き方、書き出しの目安は `references/images.md`。
 
 ### 6. 動作確認
 
@@ -66,5 +67,7 @@ draft: true
 ## このあと
 
 - 本文の執筆は blog-writing-guide-ja + writing-ja で行う。
+- 本文の数値・バージョン・比較・断定は fact-check-ja で裏を取る。
 - 公開前に `references/publish-check.md` のチェックを通す。
 - SNS で告知する場合は `references/social-announcement.md` を使う。
+- 公開後に訂正・更新するときは `references/update-post.md` を使う。

@@ -107,23 +107,23 @@ def default_slug(post):
     return post.parent.name if post.name == "index.md" else post.stem
 
 
+def parse_iso_datetime(value):
+    """Hugo で一般的な日付表記を datetime として解釈する。解釈できなければ None。"""
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 def is_past_date(value):
     """Hugo で一般的な日付を解釈し、今日以前かを返す。"""
-    try:
-        normalized = str(value).replace("Z", "+00:00")
-        return datetime.fromisoformat(normalized).date() <= date.today()
-    except ValueError:
-        return False
+    parsed = parse_iso_datetime(value)
+    return parsed is not None and parsed.date() <= date.today()
 
 
 def is_valid_iso_date(value):
     """DATE_RE に合う日付が実在する日時かを返す。"""
-    try:
-        normalized = str(value).replace("Z", "+00:00")
-        datetime.fromisoformat(normalized)
-    except ValueError:
-        return False
-    return True
+    return parse_iso_datetime(value) is not None
 
 
 def static_image_path(root, url):
@@ -189,6 +189,16 @@ def inspect(root, settings):
             date_value = str(front_matter["date"])
             if not DATE_RE.match(date_value) or not is_valid_iso_date(date_value):
                 problems.append(("WARN", rel, f"date が Hugo で一般的な ISO 8601 形式でない: {front_matter['date']}"))
+        if not front_matter.get("summary"):
+            problems.append(("WARN", rel, "summary がない(記事一覧・OGP・検索結果で本文の冒頭が代わりに使われる)"))
+        if front_matter.get("lastmod"):
+            lastmod_value = str(front_matter["lastmod"])
+            lastmod = parse_iso_datetime(lastmod_value)
+            published = parse_iso_datetime(front_matter.get("date"))
+            if not DATE_RE.match(lastmod_value) or lastmod is None:
+                problems.append(("WARN", rel, f"lastmod が Hugo で一般的な ISO 8601 形式でない: {front_matter['lastmod']}"))
+            elif published is not None and lastmod.date() < published.date():
+                problems.append(("WARN", rel, f"lastmod が date より前になっている: {lastmod_value} < {front_matter['date']}"))
         if "draft" not in front_matter:
             problems.append(("WARN", rel, "draft フィールドがない(公開状態が不明瞭になる)"))
         elif str(front_matter["draft"]).lower() == "true" and is_past_date(front_matter.get("date")):

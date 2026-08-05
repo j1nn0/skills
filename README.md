@@ -10,6 +10,7 @@
 | [`blog-idea-grilling`](skills/blog-idea-grilling/SKILL.md) | 記事アイデアを企画に育て、次工程で使う企画カードにまとめるスキル。素材・読者・主張がまだ曖昧な企画段階で使う。 |
 | [`blog-writing-guide-ja`](skills/blog-writing-guide-ja/SKILL.md) | 日本語技術ブログの企画・構成・品質基準・レビューのガイド。読者の疑問に沿った記事構成、タイトルと見出しの付け方、SEO、公開前レビューの観点を定める。文レベルの文体は `writing-ja` の担当なので、記事を書くときは併用する。 |
 | [`writing-ja`](skills/writing-ja/SKILL.md) | 日本語の技術記事、ブログ記事、解説文の本文を執筆・推敲するスキル。事実関係と書き手の声を保ちながら、論理、具体性、文の読みやすさを整える。 |
+| [`fact-check-ja`](skills/fact-check-ja/SKILL.md) | 記事に書く事実を一次情報で裏取りするスキル。数値、バージョン依存の挙動、比較、断定、時間で変わる記述を確認し、確認できなかった主張は範囲を狭めて書き直す。 |
 
 ## インストール
 
@@ -45,14 +46,15 @@ GitHub Actions でも同じテストを実行する。ブログリポジトリ�
 
 ### description の評価
 
-`evals/trigger/` には、評価対象にしたスキルの description を評価するための should-trigger / should-not-trigger のテストセットを置く。現在の対象は `writing-ja`、`blog-writing-guide-ja`、`blog-ops`、`blog-idea-grilling` である。description を変更する前に内容をレビューし、skill-creator または Codex の評価器で検証する。
+`evals/trigger/` には、評価対象にしたスキルの description を評価するための should-trigger / should-not-trigger のテストセットを置く。現在の対象は `writing-ja`、`blog-writing-guide-ja`、`blog-ops`、`blog-idea-grilling`、`fact-check-ja` である。description を変更する前に内容をレビューし、skill-creator または Codex の評価器で検証する。
 
 Codex で評価する場合は、`evals/trigger/run_codex_eval.py` を使う。`gpt-5.6-luna` と low reasoning で、description とユーザー要求だけからスキルを参照すべきかを判定する。これは Claude の発火率とは別の Codex 向け指標である。結果は `evals/trigger/results/` に保存され、Git では追跡しない。
 
 ## License
 
 Original repository content is licensed under the MIT License unless a skill
-directory specifies a different license. This includes `blog-ops`.
+directory specifies a different license. This includes `blog-ops` and
+`fact-check-ja`.
 
 Some skills are derived from third-party works and are subject to their own
 license and attribution requirements. See the `LICENSE`, `SOURCES.md`, and,

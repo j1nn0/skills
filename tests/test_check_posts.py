@@ -109,6 +109,40 @@ class CheckPostsTest(unittest.TestCase):
 
             self.assertFalse([problem for problem in problems if problem[0] == "ERROR"])
 
+    def test_warns_for_missing_summary(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            write_post(root, "no-summary.md", "title: Example\ndate: 2026-07-17\ndraft: false\ntags: [one, two, three]")
+            write_post(
+                root,
+                "with-summary.md",
+                'title: Example\ndate: 2026-07-17\nsummary: "結論と扱う範囲"\ndraft: false\ntags: [one, two, three]',
+            )
+
+            _, _, problems = self.inspect(root)
+
+            summary_warnings = [problem[1] for problem in problems if "summary がない" in problem[2]]
+            self.assertEqual(["content/posts/no-summary.md"], summary_warnings)
+
+    def test_warns_when_lastmod_precedes_date(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            base = "title: Example\nsummary: s\ndraft: false\ntags: [one, two, three]"
+            write_post(root, "backwards.md", f"{base}\ndate: 2026-07-17\nlastmod: 2026-07-01")
+            write_post(root, "forwards.md", f"{base}\ndate: 2026-07-17\nlastmod: 2026-08-01")
+            write_post(root, "broken.md", f"{base}\ndate: 2026-07-17\nlastmod: 2026-02-30")
+
+            _, _, problems = self.inspect(root)
+
+            messages = {problem[1]: problem[2] for problem in problems if "lastmod" in problem[2]}
+            self.assertEqual(
+                {
+                    "content/posts/backwards.md": "lastmod が date より前になっている: 2026-07-01 < 2026-07-17",
+                    "content/posts/broken.md": "lastmod が Hugo で一般的な ISO 8601 形式でない: 2026-02-30",
+                },
+                messages,
+            )
+
     def test_warns_for_stale_draft(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)

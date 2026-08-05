@@ -1,0 +1,22 @@
+[
+  {"query":"下書きに『p99 が 340ms から 45ms になった』と書いたけど、手元の計測ログを見直したら条件がバラバラだった。この数字を記事に出していいか確認したい。", "should_trigger":true},
+  {"query":"記事で『v3 からデフォルトで有効』と書いている箇所、うろ覚えなので公式ドキュメントで裏を取ってほしい。バージョンも本文に入れたい。", "should_trigger":true},
+  {"query":"企画カードの『要確認』が3件残ってる。公開前に潰したい。", "should_trigger":true},
+  {"query":"去年書いた Cloudflare Workers の記事、無料枠と料金の記述がもう古いと思う。今の一次情報と突き合わせて。", "should_trigger":true},
+  {"query":"content/posts/orm-comparison.md で Prisma と Drizzle を比較してるんだけど、Drizzle 側の仕様を誤解したまま書いてないか心配。公式の記述と照らして見て。", "should_trigger":true},
+  {"query":"記事の中で『この API はバッチ処理に対応していない』と言い切ってる。ほんとにそう? 反例があると記事全体が崩れるので確認して。", "should_trigger":true},
+  {"query":"下書きのコードサンプル、実際に動くか確かめてほしい。あと設定項目の名前が公式ドキュメントに実在するかも見て。", "should_trigger":true},
+  {"query":"この段落、ソースある? 自分で書いたのに何を見て書いたか思い出せない。", "should_trigger":true},
+  {"query":"AI に書かせた技術解説の下書きなんだけど、それっぽいけど実在しないオプションが混ざってる気がする。事実の部分だけ検証して。", "should_trigger":true},
+  {"query":"公開前の最終確認。技術的な主張と数字が正しいかだけ見てほしい。文章はもう直さなくていい。", "should_trigger":true},
+  {"query":"下書きの本文を推敲して。語尾の単調さと回りくどい言い回しだけ直したい。事実関係はもう確認済み。", "should_trigger":false},
+  {"query":"この記事、章立てが読者の疑問順になってない気がする。構成を作り直して。", "should_trigger":false},
+  {"query":"Rust に移行した話を書きたいけど、何を軸にすればいいか決まっていない。読者も主張もぼんやりしている。", "should_trigger":false},
+  {"query":"content/posts/new.md の front matter を作りたい。slug と tags の候補も決めて。", "should_trigger":false},
+  {"query":"本番だけ 502 が出る。ログを見て原因を特定して直して。", "should_trigger":false},
+  {"query":"CI のテストが今朝から落ちてる。差分から原因を調べて。", "should_trigger":false},
+  {"query":"Hono のミドルウェアの書き方を教えて。最新のやり方が知りたい。", "should_trigger":false},
+  {"query":"完成した記事、開発者が共有したくなる内容になってるか見て。深さが足りてるか知りたい。", "should_trigger":false},
+  {"query":"過去記事の外部リンクがだいぶ切れてる。まとめて Wayback Machine に張り替えて。", "should_trigger":false},
+  {"query":"計測した3パターンのレイテンシを記事に載せる図にしたい。Mermaid か画像で作って。", "should_trigger":false}
+]
