@@ -166,7 +166,7 @@ def parse_args():
     parser.add_argument("--eval-set", type=Path, required=True)
     parser.add_argument("--skill-path", type=Path, required=True, help="スキルディレクトリ")
     parser.add_argument("--description", help="評価する description。省略時は SKILL.md の値")
-    parser.add_argument("--model", default="gpt-5.4-mini", help="Codex モデル (既定: gpt-5.4-mini)")
+    parser.add_argument("--model", default="gpt-5.6-luna", help="Codex モデル (既定: gpt-5.6-luna)")
     parser.add_argument("--runs-per-query", type=int, default=3)
     parser.add_argument("--max-workers", type=int, default=3)
     parser.add_argument("--trigger-threshold", type=float, default=0.5)
