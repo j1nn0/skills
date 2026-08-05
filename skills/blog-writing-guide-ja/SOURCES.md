@@ -15,6 +15,27 @@ Copyright 2025 Functional Software, Inc. dba Sentry is retained for the
 original work. Copyright 2026 j1nn0 applies to the modifications and original
 additions in this skill.
 
+## natural-japanese
+
+Four article-level practices in this skill are based on `coji/natural-japanese`.
+
+- Source: https://github.com/coji/natural-japanese
+- License: MIT
+- Changes: Only article-level material was taken. The sweep-rewrite guard
+  (`references/revision-guide.md`, "改稿を一律に適用しない") became "直す箇所を選ぶ"
+  in `references/review.md`; the separation of chronology from narrative staging
+  (`references/genre-notes.md`, tech section) and the deliberate unevenness of
+  section weight ("濃淡設計") were condensed into `SKILL.md`; the test for a
+  paragraph that survives the removal of proper nouns, numbers, and examples
+  ("素材不足の分岐") became "一般論になっていないか検査する". All were rewritten for
+  Japanese technical blog posts. The workflow, the score mode, the doctype
+  templates, the lint scripts, and the readability layer were not adopted here;
+  the readability layer is ported separately in `writing-ja`.
+
+The MIT copyright notice is preserved in `LICENSE`:
+
+- Copyright (c) 2026 coji
+
 ## Independence and trademarks
 
 This is an independent derivative work. It is not an official Japanese version
