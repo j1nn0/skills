@@ -1,0 +1,22 @@
+[
+  {"query":"Rust に移行した話を書きたいけど、何を軸にすればいいか決まっていない。読者も主張もぼんやりしている。", "should_trigger":true},
+  {"query":"今週やったデバッグ、記事になるネタか一緒に考えて。手元にあるのはログと修正コミットだけ。", "should_trigger":true},
+  {"query":"ブログのネタ相談。テーマは決まったけど、誰向けに書くかで迷っている。", "should_trigger":true},
+  {"query":"この検証結果で1本書きたい。ただ主張が『速かった』しかなくて弱い気がする。", "should_trigger":true},
+  {"query":"書きたいことが多すぎて範囲が絞れない。1記事に収まる企画の形にしたい。", "should_trigger":true},
+  {"query":"ネタ帳に溜めた候補から、今の手持ちの材料で書けるものを1つ選んで企画として固めたい。", "should_trigger":true},
+  {"query":"社内で作ったツールの話を外向けに書きたいが、読者にとっての価値が言語化できていない。", "should_trigger":true},
+  {"query":"この題材、既存の記事と何が違うのか自分でも説明できない。切り口を一緒に決めてほしい。", "should_trigger":true},
+  {"query":"勉強会の発表資料をブログにしたい。そのままだと主張のない機能の列挙になってしまう。", "should_trigger":true},
+  {"query":"次の記事の企画を相談したい。素材はあるが、読後に読者が何をできるようになる記事なのかが決まっていない。", "should_trigger":true},
+  {"query":"企画は固まっている。読者の疑問順に章立てを作って、見出しも決めて。", "should_trigger":false},
+  {"query":"下書きの本文を推敲して。語尾の単調さと回りくどい言い回しだけ直したい。", "should_trigger":false},
+  {"query":"content/posts/new.md の front matter と slug を用意して。画像の置き場所も決めて。", "should_trigger":false},
+  {"query":"書き上げた記事のタイトル案を10個出して。手が止まるものがいい。", "should_trigger":false},
+  {"query":"完成した記事をレビューして。技術的な誤りと過度な単純化がないか見て。", "should_trigger":false},
+  {"query":"タグを整理したい。使われていないタグページを消して、表記も揃えて。", "should_trigger":false},
+  {"query":"Hugo のビルドが本番だけ失敗する。原因を調べて直して。", "should_trigger":false},
+  {"query":"公開済みの記事を英訳して。コードブロックはそのままで。", "should_trigger":false},
+  {"query":"検索流入を増やしたい。既存記事のどこを直せばいいか SEO の観点で見て。", "should_trigger":false},
+  {"query":"新規プロダクトに載せる機能案を10個ブレストして。優先度も付けて。", "should_trigger":false}
+]

@@ -45,7 +45,7 @@ GitHub Actions でも同じテストを実行する。ブログリポジトリ�
 
 ### description の評価
 
-`evals/trigger/` には、評価対象にしたスキルの description を評価するための should-trigger / should-not-trigger のテストセットを置く。現在の対象は `writing-ja`、`blog-writing-guide-ja`、`blog-ops` である。description を変更する前に内容をレビューし、skill-creator または Codex の評価器で検証する。
+`evals/trigger/` には、評価対象にしたスキルの description を評価するための should-trigger / should-not-trigger のテストセットを置く。現在の対象は `writing-ja`、`blog-writing-guide-ja`、`blog-ops`、`blog-idea-grilling` である。description を変更する前に内容をレビューし、skill-creator または Codex の評価器で検証する。
 
 Codex で評価する場合は、`evals/trigger/run_codex_eval.py` を使う。`gpt-5.4-mini` と low reasoning で、description とユーザー要求だけからスキルを参照すべきかを判定する。これは Claude の発火率とは別の Codex 向け指標である。結果は `evals/trigger/results/` に保存され、Git では追跡しない。
 
