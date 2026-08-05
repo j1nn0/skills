@@ -40,6 +40,16 @@ class CheckStyleTest(unittest.TestCase):
             [(candidate.line, candidate.reason) for candidate in candidates],
         )
 
+    def test_reports_editing_jargon_as_hard_words(self):
+        text = "余計な推敲を始める。\n迂言を減らす。\n"
+
+        candidates = check_style.find_candidates(text)
+
+        self.assertEqual(
+            [(1, "日常語にできる硬い漢語"), (2, "日常語にできる硬い漢語")],
+            [(candidate.line, candidate.reason) for candidate in candidates],
+        )
+
     def test_reports_structure_and_repetition_candidates(self):
         text = (
             "確認した。\n保存した。\n公開した。\n\n"
