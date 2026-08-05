@@ -16,6 +16,22 @@ The following MIT copyright notices are preserved in `LICENSE`:
 Copyright (c) 2026 j1nn0 applies to the modifications and original additions
 in this skill.
 
+## natural-japanese
+
+The readability principles in this skill are based on `coji/natural-japanese`.
+
+- Source: https://github.com/coji/natural-japanese
+- License: MIT
+- Changes: Only the readability layer was taken (`references/readability-principles.md`
+  and `references/readability-antipatterns.md`). Word order, comma placement,
+  subject-predicate distance, the reader's three axes, and a subset of the bad-prose
+  patterns were condensed and rewritten for Japanese technical prose. The full
+  workflow, doctype templates, and the morphological-analysis lint were not adopted.
+
+The MIT copyright notice is preserved in `LICENSE`:
+
+- Copyright (c) 2026 coji
+
 ## k16shikano public Gist
 
 Parts of this skill were derived from a public Gist by k16shikano.
