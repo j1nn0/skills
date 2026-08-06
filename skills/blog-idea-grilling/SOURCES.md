@@ -12,6 +12,12 @@ This skill is based on the `grilling` / `grill-me` skill from
   completion criteria; added the 企画カード handoff to
   `blog-writing-guide-ja`; and integrated the skill with `blog-ops`.
 
+Intentional divergence: upstream asks the whole frontier of ready decisions in
+one numbered round. This skill deliberately keeps one question at a time,
+because an article idea is usually still vague when the session starts and a
+batch of questions overwhelms rather than clarifies. Do not "fix" this to match
+upstream.
+
 The MIT License text and the original copyright notice are preserved in
 `LICENSE`.
 
