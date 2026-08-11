@@ -11,6 +11,7 @@
 | [`blog-writing-guide-ja`](skills/blog-writing-guide-ja/SKILL.md) | 日本語技術ブログの企画・構成・品質基準・レビューのガイド。読者の疑問に沿った記事構成、タイトルと見出しの付け方、SEO、公開前レビューの観点を定める。文レベルの文体は `writing-ja` の担当なので、記事を書くときは併用する。 |
 | [`writing-ja`](skills/writing-ja/SKILL.md) | 日本語の技術記事、ブログ記事、解説文の本文を執筆・推敲するスキル。事実関係と書き手の声を保ちながら、論理、具体性、文の読みやすさを整える。 |
 | [`fact-check-ja`](skills/fact-check-ja/SKILL.md) | 記事に書く事実を一次情報で裏取りするスキル。数値、バージョン依存の挙動、比較、断定、時間で変わる記述を確認し、確認できなかった主張は範囲を狭めて書き直す。 |
+| [`agent-orchestration`](skills/agent-orchestration/SKILL.md) | Herdr セッション上で 3 エージェント(Claude Code / OMP / Codex)に役割を固定してソフトウェア開発を進めるスキル。Claude Code がオーケストレーションとレビューを担い、調査は OMP、実装は Codex に委譲する。`HERDR_ENV=1` が必要で、`herdr` スキルと併用する。 |
 
 ## インストール
 
@@ -53,8 +54,8 @@ Codex で評価する場合は、`evals/trigger/run_codex_eval.py` を使う。`
 ## License
 
 Original repository content is licensed under the MIT License unless a skill
-directory specifies a different license. This includes `blog-ops` and
-`fact-check-ja`.
+directory specifies a different license. This includes `blog-ops`,
+`fact-check-ja`, and `agent-orchestration`.
 
 Some skills are derived from third-party works and are subject to their own
 license and attribution requirements. See the `LICENSE`, `SOURCES.md`, and,
