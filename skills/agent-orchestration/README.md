@@ -8,8 +8,18 @@ A Claude Code skill for coordinating software engineering work through Herdr wit
 | Investigation and research | OMP | `omp` | `opencode-go/deepseek-v4-flash`, `thinking: xhigh` |
 | Implementation | Codex | `codex` | `gpt-5.6-luna`, `effort: max` |
 
-The models and levels come from each CLI's own configuration (`~/.omp/agent/config.yml`,
-`~/.codex/config.toml`), so agents are started by kind alone with no model override flags.
+The skill pins the delegated agents' model and reasoning level explicitly through `herdr agent start`
+instead of relying on the user's global OMP or Codex defaults.
+
+```bash
+herdr agent start omp --kind omp --pane <pane-id> -- \
+  --model opencode-go/deepseek-v4-flash \
+  --thinking xhigh
+
+herdr agent start codex --kind codex --pane <pane-id> -- \
+  --model gpt-5.6-luna \
+  -c model_reasoning_effort=max
+```
 
 The skill requires `HERDR_ENV=1`; outside a Herdr session it falls back to single-agent work. It
 intentionally contains orchestration policy only — Herdr command syntax and terminal control remain

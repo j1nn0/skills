@@ -36,9 +36,12 @@ would take over your own pane and end the orchestration.
 Before starting anything, check what already exists and what is installed:
 
 ```bash
-herdr agent list   # reuse a live omp/codex agent instead of starting a duplicate
+herdr agent list   # reuse a live omp/codex agent only if its configuration matches
 herdr agent        # kinds must include omp and codex
 ```
+
+Only reuse a live OMP or Codex agent when its model and reasoning level match the role configuration
+below. Otherwise, start a new agent with the pinned arguments below.
 
 If a kind is missing or `agent start` fails, do not silently substitute a different kind — the role
 assignment below is the point of the skill. Report the failure and either continue yourself or ask
@@ -52,18 +55,22 @@ the user.
 | Investigation and research | OMP | `omp` | `opencode-go/deepseek-v4-flash`, `thinking: xhigh` |
 | Implementation | Codex | `codex` | `gpt-5.6-luna`, `effort: max` |
 
-Start delegated agents with the kind alone:
+Start delegated agents with the model and reasoning level pinned explicitly:
 
 ```bash
-herdr agent start omp --kind omp --pane <pane-id>
-herdr agent start codex --kind codex --pane <pane-id>
+herdr agent start omp --kind omp --pane <pane-id> -- \
+  --model opencode-go/deepseek-v4-flash \
+  --thinking xhigh
+
+herdr agent start codex --kind codex --pane <pane-id> -- \
+  --model gpt-5.6-luna \
+  -c model_reasoning_effort=max
 ```
 
-The models and levels in the table are what these CLIs already load from their own configuration
-(`~/.omp/agent/config.yml`, `~/.codex/config.toml`). Passing `--model`, `--thinking`, or
-`-c model_reasoning_effort` overrides only risks drifting from the user's configured setup, so
-don't. If a run looks like it used the wrong model, confirm with `herdr agent get <name>` rather
-than guessing.
+Everything after `--` is passed to the native agent CLI. Do not rely on
+`~/.omp/agent/config.yml` or `~/.codex/config.toml` for the model and reasoning level assigned by
+this skill. If the requested model or reasoning level is rejected, report the startup failure instead
+of silently falling back to the agent's configured default.
 
 ### Claude Code — orchestration, decisions, and review
 
