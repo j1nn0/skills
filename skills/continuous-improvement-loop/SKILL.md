@@ -64,9 +64,9 @@ The current agent remains responsible for the loop itself. Never delegate:
 - deciding whether the repository has converged.
 
 When a round meets the delegation criteria in **Round Workflow §4**, `agent-orchestration` is
-responsible for its engineering workflow: OMP investigates read-only, the current agent evaluates the
-findings and decides the strategy, Codex implements, and the current agent reviews and verifies the
-result.
+responsible for its engineering workflow: Pi `explorer` investigates read-only, the current agent
+evaluates the findings and decides the strategy, Pi `fixer` implements, and the current agent reviews
+and verifies the result.
 
 ## Loop Model
 
@@ -162,15 +162,15 @@ Handle a round directly only when the change is local, mechanically obvious, low
 external research, and does not require a cross-component design decision. When uncertain which case
 applies, use `agent-orchestration`.
 
-Use OMP for evidence gathering when the right change is not already clear. Require OMP to remain
-read-only. The current agent must evaluate the findings before turning them into an implementation
-strategy.
+Use Pi `explorer` for evidence gathering when the right change is not already clear. Require Pi
+`explorer` to remain read-only. The current agent must evaluate the findings before turning them into
+an implementation strategy.
 
-If OMP findings are inconclusive, contradictory, or too weak to support the proposed change, do not
-proceed to implementation. Request a targeted follow-up investigation when a focused question could
-reasonably resolve the uncertainty. If sufficient evidence still cannot be established without
-disproportionate effort or speculation, treat that candidate as blocked for the current loop and
-evaluate the next-best candidate.
+If the explorer's findings are inconclusive, contradictory, or too weak to support the proposed
+change, do not proceed to implementation. Request a targeted follow-up investigation when a focused
+question could reasonably resolve the uncertainty. If sufficient evidence still cannot be established
+without disproportionate effort or speculation, treat that candidate as blocked for the current loop
+and evaluate the next-best candidate.
 
 Do not use investigation merely to justify a change already chosen by preference.
 
@@ -190,9 +190,9 @@ These are **round-level** completion criteria, not final loop completion criteri
 
 ### 6. Implement
 
-If the round meets the delegation criteria in **Round Workflow §4**, delegate implementation to Codex
-through `agent-orchestration`. Otherwise, the current agent may implement the local low-risk change
-directly.
+If the round meets the delegation criteria in **Round Workflow §4**, delegate implementation to Pi
+`fixer` through `agent-orchestration`. Otherwise, the current agent may implement the local low-risk
+change directly.
 
 Keep the implementation inside the approved theme and strategy. Allow local implementation decisions
 when they do not change the approved scope or constraints.
@@ -356,9 +356,9 @@ constraints; it must not depend on undocumented private reasoning from earlier r
 continuous-improvement-loop
   ├─ choose round
   ├─ agent-orchestration
-  │    ├─ OMP investigation
+  │    ├─ Pi explorer investigation
   │    ├─ current-agent decision
-  │    ├─ Codex implementation
+  │    ├─ Pi fixer implementation
   │    └─ current-agent review / verification
   ├─ commit logical units
   ├─ reassess repository

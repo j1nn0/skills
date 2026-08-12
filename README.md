@@ -11,7 +11,7 @@
 | [`blog-writing-guide-ja`](skills/blog-writing-guide-ja/SKILL.md) | 日本語技術ブログの企画・構成・品質基準・レビューのガイド。読者の疑問に沿った記事構成、タイトルと見出しの付け方、SEO、公開前レビューの観点を定める。文レベルの文体は `writing-ja` の担当なので、記事を書くときは併用する。 |
 | [`writing-ja`](skills/writing-ja/SKILL.md) | 日本語の技術記事、ブログ記事、解説文の本文を執筆・推敲するスキル。事実関係と書き手の声を保ちながら、論理、具体性、文の読みやすさを整える。 |
 | [`fact-check-ja`](skills/fact-check-ja/SKILL.md) | 記事に書く事実を一次情報で裏取りするスキル。数値、バージョン依存の挙動、比較、断定、時間で変わる記述を確認し、確認できなかった主張は範囲を狭めて書き直す。 |
-| [`agent-orchestration`](skills/agent-orchestration/SKILL.md) | Herdr セッション上で、現在のエージェントがオーケストレーションとレビューを担い、OMP に調査、Codex に実装を委譲するスキル。委譲が不確実性・実装リスク・レビューリスクを十分に下げる場合に使う。`HERDR_ENV=1` が必要で、`herdr` スキルと併用する。 |
+| [`agent-orchestration`](skills/agent-orchestration/SKILL.md) | Herdr セッション上で、現在のエージェントがオーケストレーションとレビューを担い、Pi `explorer` に調査、Pi `fixer` に実装を委譲するスキル。委譲が不確実性・実装リスク・レビューリスクを十分に下げる場合に使う。`HERDR_ENV=1` が必要で、`herdr` スキルと併用する。 |
 | [`continuous-improvement-loop`](skills/continuous-improvement-loop/SKILL.md) | リポジトリを反復的に改善する自律ループのスキル。各ラウンドで現状を再評価して価値のある改善を一つだけ選び、必要に応じて `agent-orchestration` を使い、レビュー・検証・コミット後に次のラウンドの妥当性を判断する。固定のタスクリストではなく、改善余地がなくなるまでの継続的な改善に使う。 |
 
 ## インストール
