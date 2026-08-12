@@ -2,19 +2,19 @@
 name: agent-orchestration
 description: >-
   Orchestrates non-trivial software engineering work across three agents in a
-  Herdr session: Claude Code stays the orchestrator and reviewer, OMP does
+  Herdr session: the current agent stays the orchestrator and reviewer, OMP does
   investigation and research, Codex does implementation. Use for feature
   development, bug fixes, refactoring, static analysis, technical research,
   architecture exploration, or new project work whenever the investigation or
   the implementation is substantial enough to be worth a handoff. Requires
   HERDR_ENV=1 and builds on the herdr skill for pane and agent control. Do not
-  use for trivial tasks or single-step questions Claude Code can answer
+  use for trivial tasks or single-step questions the current agent can answer
   directly.
 ---
 
 # Agent Orchestration
 
-You are **Claude Code** and remain the primary orchestrator for the whole task.
+You remain the primary orchestrator for the whole task.
 Orchestration, review, and the completion decision are never delegated — everything else in this
 skill describes what you hand off and what you keep.
 
@@ -51,7 +51,7 @@ the user.
 
 | Role | Agent | Herdr kind | Model / effort |
 | --- | --- | --- | --- |
-| Orchestration, decisions, review | Claude Code (you) | — | Opus 5, `thinking: high` |
+| Orchestration, decisions, review | Current agent (you) | — | Current model |
 | Investigation and research | OMP | `omp` | `opencode-go/deepseek-v4-flash`, `thinking: xhigh` |
 | Implementation | Codex | `codex` | `gpt-5.6-luna`, `effort: max` |
 
@@ -72,7 +72,7 @@ Everything after `--` is passed to the native agent CLI. Do not rely on
 this skill. If the requested model or reasoning level is rejected, report the startup failure instead
 of silently falling back to the agent's configured default.
 
-### Claude Code — orchestration, decisions, and review
+### Current agent — orchestration, decisions, and review
 
 You own: understanding and planning the task; defining objectives, constraints, scope, and
 completion criteria; deciding whether investigation is necessary; evaluating evidence and validating
@@ -176,13 +176,13 @@ emerges, summarize the findings and attempts and consult the user.
 
 ## Recommended Herdr layout
 
-Keep Claude Code visually dominant — it is where decisions, review, and completion happen.
+Keep the current orchestrator visually dominant — it is where decisions, review, and completion happen.
 
 ```text
 ┌──────────────────────────────┬──────────────────────┐
 │                              │         OMP          │
 │                              │   Investigation      │
-│        Claude Code           │         ~25%         │
+│      Current agent           │         ~25%         │
 │        Orchestrator          ├──────────────────────┤
 │           ~50%               │        Codex         │
 │                              │   Implementation     │
@@ -190,10 +190,10 @@ Keep Claude Code visually dominant — it is where decisions, review, and comple
 └──────────────────────────────┴──────────────────────┘
 ```
 
-- Claude Code holds the left half; the right half is the delegated-agent area, OMP above Codex.
+- The current orchestrator holds the left half; the right half is the delegated-agent area, OMP above Codex.
 - With one delegated agent, it may use the whole right half. When the second arrives, split the
-  agent area — not Claude Code's pane.
-- Treat 50/25/25 as a target, not a rule that justifies unreadable panes. Keep focus on Claude Code
+  agent area — not the orchestrator's pane.
+- Treat 50/25/25 as a target, not a rule that justifies unreadable panes. Keep focus on the orchestrator
   and preserve the caller's working directory.
 - Never rearrange, resize, or close user-owned panes, and never create a workspace, tab, or worktree
   just to reach this layout, unless the user asks.
@@ -214,5 +214,5 @@ Multi-agent coordination pays off when investigation, implementation, or indepen
 substantial enough to justify the handoff. Handle trivial checks yourself — invoking OMP or Codex to
 satisfy the workflow on a task you could finish safely in a moment costs more than it returns.
 
-Project rules and verification procedures from the project's `CLAUDE.md` take precedence over the
-generic guidance here.
+Project-specific agent instructions and verification procedures take precedence over the generic
+guidance here.
