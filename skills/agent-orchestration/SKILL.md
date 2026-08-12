@@ -51,8 +51,8 @@ Before delegation:
    interactive shell with no foreground agent, editor, or command. If none exists, create a pane
    according to the `herdr` skill and use the pane ID returned by Herdr. Never guess a pane ID.
 4. Start the role with its pinned command below.
-5. If any required kind, model, thinking level, extension, tool, pane, or start operation fails, stop
-   delegation for that role. Never silently fall back to a different configuration.
+5. If any required kind, model, thinking level, pane, or start operation fails, stop delegation for
+   that role. Never silently fall back to a different configuration.
 
 ### Explorer
 
@@ -60,13 +60,6 @@ Before delegation:
 herdr agent start explorer --kind pi --pane <pane-id> -- \
   --model opencode-go/deepseek-v4-flash \
   --thinking max \
-  --no-extensions \
-  -e ~/.pi/agent/extensions/herdr-agent-state.ts \
-  -e npm:@gotgenes/pi-permission-system \
-  -e npm:context-mode \
-  -e npm:pi-lens \
-  -e npm:pi-web-access \
-  --tools read,grep,find,ls,symbol_search,module_report,read_symbol,read_enclosing,lsp_diagnostics,lens_diagnostics,web_search,fetch_content \
   --no-autoformat \
   --no-autofix
 ```
@@ -77,20 +70,12 @@ herdr agent start explorer --kind pi --pane <pane-id> -- \
 herdr agent start fixer --kind pi --pane <pane-id> -- \
   --model openai-codex/gpt-5.6-luna \
   --thinking max \
-  --no-extensions \
-  -e ~/.pi/agent/extensions/herdr-agent-state.ts \
-  -e npm:@gotgenes/pi-permission-system \
-  -e npm:context-mode \
-  -e npm:pi-lens \
-  -e ~/.pi/agent/extensions/rtk.ts \
   --no-autoformat \
   --no-autofix
 ```
 
-The fixer intentionally uses Pi's default tool set; its reuse check covers kind, model, and thinking
-level only.
-
-Everything after `--` is passed to Pi. Do not rely on Pi's global defaults for delegated roles.
+Both delegated agents intentionally use Pi's normal installed extensions, skills, and tools. The
+skill pins only the role-specific model and thinking level.
 
 ## Workflow
 
@@ -125,8 +110,8 @@ Prefer primary official sources for external technical research.
 If any required field is missing or confidence is explicitly too low to proceed safely, send a focused
 follow-up that states exactly what evidence or information is missing before deciding the strategy.
 
-If the report is too long to recover reliably from the pane, ask for smaller self-contained sections.
-Do not grant write access merely to create a report file.
+If the report is too long to recover reliably from the pane, ask for smaller self-contained sections
+instead of asking the explorer to create a report file.
 
 ### Fixer handoff
 

@@ -8,9 +8,9 @@ A reusable skill for coordinating non-trivial software engineering work through 
 | Investigation and research | Pi `explorer` | `opencode-go/deepseek-v4-flash`, `thinking: max` |
 | Implementation | Pi `fixer` | `openai-codex/gpt-5.6-luna`, `thinking: max` |
 
-The current agent owns strategy, review, and completion. `explorer` is read-only; `fixer` owns project
-file changes. Both delegated agents use pinned Pi models and explicit extension profiles rather than
-global Pi defaults.
+The current agent owns strategy, review, and completion. `explorer` is read-only by role; `fixer` owns
+project file changes. Both delegated agents use their normal installed Pi extensions, skills, and tools,
+with only the role-specific model and thinking level pinned.
 
 The workflow is:
 
