@@ -93,6 +93,18 @@ Delegated agents do not share your conversation. Every prompt must be standalone
 only. Unless explicitly instructed by you, delegated agents must not invoke `agent-orchestration` or
 delegate their own work.
 
+Require every delegated response to end with one concise final result block:
+
+```text
+<HERDR_RESULT>
+...
+</HERDR_RESULT>
+```
+
+When reading agent output, use the last complete `HERDR_RESULT` block as the handoff result and ignore
+preceding thinking or progress output. If no complete block is visible, ask the agent to re-emit only
+its final result without repeating the work.
+
 ### Explorer handoff
 
 Give the explorer the objective, relevant paths or systems, constraints, and questions to answer.
@@ -110,8 +122,8 @@ Prefer primary official sources for external technical research.
 If any required field is missing or confidence is explicitly too low to proceed safely, send a focused
 follow-up that states exactly what evidence or information is missing before deciding the strategy.
 
-If the report is too long to recover reliably from the pane, ask for smaller self-contained sections
-instead of asking the explorer to create a report file.
+Keep the result concise enough to recover reliably from the pane; if necessary, ask the explorer to
+re-emit a shorter final result rather than repeat the investigation.
 
 ### Fixer handoff
 
