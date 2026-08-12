@@ -40,12 +40,13 @@ If that fails, do the task yourself. Do not run Pi in the orchestrator pane as a
 Before delegation:
 
 1. Run `herdr agent list` and `herdr agent`; confirm the `pi` kind is available.
-2. Resolve each required role:
-   - reuse a live agent only when its kind, model, and thinking level match the table above;
-   - if a live agent with that name does not match, send `/quit`, confirm it no longer appears live
-     in `herdr agent list`, and confirm with `herdr pane process-info --pane <id>` that its pane has
-     returned to the interactive shell before reusing that pane;
-   - if shutdown cannot be confirmed, stop delegation for that role.
+2. Resolve each required agent slot:
+   1. Check whether the named agent is live.
+   2. If its kind, model, and thinking level match the table above, reuse it.
+   3. Otherwise send `/quit` and wait until it disappears from `herdr agent list`.
+   4. Confirm with `herdr pane process-info --pane <id>` that its pane has returned to the
+      interactive shell.
+   5. If shutdown or shell availability cannot be confirmed, stop delegation for that role.
 3. Resolve `<pane-id>` with `herdr pane list`. Use only a pane whose process info shows an available
    interactive shell with no foreground agent, editor, or command. If none exists, create a pane
    according to the `herdr` skill and use the pane ID returned by Herdr. Never guess a pane ID.
@@ -86,6 +87,9 @@ herdr agent start fixer --kind pi --pane <pane-id> -- \
   --no-autofix
 ```
 
+The fixer intentionally uses Pi's default tool set; its reuse check covers kind, model, and thinking
+level only.
+
 Everything after `--` is passed to Pi. Do not rely on Pi's global defaults for delegated roles.
 
 ## Workflow
@@ -118,7 +122,7 @@ Require a concise report containing:
 
 Prefer primary official sources for external technical research.
 
-If required fields are missing or confidence is explicitly too low to proceed safely, send a focused
+If any required field is missing or confidence is explicitly too low to proceed safely, send a focused
 follow-up that states exactly what evidence or information is missing before deciding the strategy.
 
 If the report is too long to recover reliably from the pane, ask for smaller self-contained sections.
