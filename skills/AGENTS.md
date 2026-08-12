@@ -19,7 +19,8 @@ No standalone files are expected here. Put each skill's entry point in its own `
 | `blog-idea-grilling/` | Japanese blog-idea development skill that produces a planning card. |
 | `fact-check-ja/` | Japanese fact-verification skill: checks article claims against primary sources and rewrites unverified ones. |
 | `blog-ops/` | Entry-point skill for Hugo blog operations: routes to planning/writing/fact-checking skills, new-post setup, post revision, pre-publish checks, tag management, and repo conventions. |
-| `agent-orchestration/` | Orchestrates engineering work across three agents in a Herdr session: Claude Code orchestrates and reviews, OMP investigates, Codex implements. Requires HERDR_ENV=1; builds on the herdr skill. |
+| `agent-orchestration/` | Orchestrates engineering work across three agents in a Herdr session: the current agent orchestrates and reviews, OMP investigates, and Codex implements. Use it when delegation materially reduces uncertainty, implementation risk, or review risk. Requires HERDR_ENV=1; builds on the herdr skill. |
+| `continuous-improvement-loop/` | Runs reviewable autonomous engineering-improvement rounds until the repository converges. Reassesses and selects one improvement per round, then uses `agent-orchestration` for rounds that warrant delegation. |
 
 ## For AI Agents
 

@@ -5,11 +5,10 @@ description: >-
   Herdr session: the current agent stays the orchestrator and reviewer, OMP does
   investigation and research, Codex does implementation. Use for feature
   development, bug fixes, refactoring, static analysis, technical research,
-  architecture exploration, or new project work whenever the investigation or
-  the implementation is substantial enough to be worth a handoff. Requires
-  HERDR_ENV=1 and builds on the herdr skill for pane and agent control. Do not
-  use for trivial tasks or single-step questions the current agent can answer
-  directly.
+  architecture exploration, or new project work when delegation would materially
+  reduce uncertainty, implementation risk, or review risk. Requires HERDR_ENV=1
+  and builds on the herdr skill for pane and agent control. Do not use for
+  trivial tasks or single-step questions the current agent can answer directly.
 ---
 
 # Agent Orchestration
@@ -36,16 +35,21 @@ would take over your own pane and end the orchestration.
 Before starting anything, check what already exists and what is installed:
 
 ```bash
-herdr agent list   # reuse a live omp/codex agent only if its configuration matches
+herdr agent list   # inspect live agents and their configuration
 herdr agent        # kinds must include omp and codex
 ```
 
-Only reuse a live OMP or Codex agent when its model and reasoning level match the role configuration
-below. Otherwise, start a new agent with the pinned arguments below.
+Perform this checklist in order before delegation:
 
-If a kind is missing or `agent start` fails, do not silently substitute a different kind — the role
-assignment below is the point of the skill. Report the failure and either continue yourself or ask
-the user.
+1. Run `herdr agent list` and `herdr agent`.
+2. For each required role, first `omp`, then `codex`:
+   - confirm that the required kind is available;
+   - if a live instance exists, confirm its kind, model, and reasoning level;
+   - reuse it only when all required values match the role configuration below;
+   - otherwise start a new instance with the pinned arguments below.
+3. If a required kind is unavailable or `herdr agent start` fails, report the failure and stop
+   delegation for that role. Do not silently fall back to a different kind, model, or reasoning
+   level. Continue yourself or ask the user as appropriate.
 
 ## Roles
 
@@ -82,11 +86,11 @@ completion decision.
 
 ### OMP — investigation and research
 
-Delegate investigation and analysis to OMP when it is substantial enough to be worth the handoff:
-investigating existing code; researching technologies, libraries, APIs, specifications, and
-implementation approaches; identifying root causes, dependencies, constraints, and potential impact;
-comparing alternatives when a technical decision needs evidence; producing hypotheses with
-supporting evidence.
+When delegation is warranted by the heuristics in **Delegation boundary**, delegate investigation
+and analysis to OMP: investigating existing code; researching technologies, libraries, APIs,
+specifications, and implementation approaches; identifying root causes, dependencies, constraints,
+and potential impact; comparing alternatives when a technical decision needs evidence; producing
+hypotheses with supporting evidence.
 
 Investigation is not limited to existing code. For new projects, use OMP for the technical research
 that improves the implementation decision.
@@ -101,9 +105,9 @@ you send, and keep file modification exclusively with Codex.
 
 ### Codex — implementation
 
-Delegate implementation to Codex by default: features and fixes; new code and project structure;
-refactoring; tests; documentation when needed; and a report of the resulting changes and
-verification results.
+When delegation is warranted, delegate implementation to Codex by default: features and fixes; new
+code and project structure; refactoring; tests; documentation when needed; and a report of the
+resulting changes and verification results.
 
 ## Workflow
 
@@ -112,7 +116,7 @@ verification results.
 3. When investigation is necessary, delegate it to OMP.
 4. Evaluate OMP's evidence and hypotheses yourself. Ask for more when confidence is insufficient.
 5. Determine the implementation strategy, scope, constraints, and completion criteria yourself.
-6. Delegate implementation to Codex.
+6. Delegate implementation to Codex when the delegation heuristics apply.
 7. Review the actual changes and verification results yourself.
 8. If problems remain, decide whether more investigation or implementation is required.
 9. Run the project's own verification and confirm the completion criteria before declaring the task
@@ -140,6 +144,10 @@ If a report is too long to read back from the pane — agents often run on the t
 screen, where raising `--lines` recovers nothing — ask the agent to write the full report as
 Markdown under the scratch directory and reply with only the path, then read the file. Use this as a
 fallback after a failed read, not as the default request.
+
+If OMP returns a report file path that cannot be read, ask OMP to confirm the exact path and verify
+that the file exists. Re-read the confirmed path. If the report is still unreadable, ask OMP to
+return the report directly in smaller sections instead of using a file.
 
 **To Codex**, communicate: objective; scope; constraints; implementation strategy; completion
 criteria; relevant investigation findings. Do not over-specify implementation details unless they
@@ -214,9 +222,20 @@ or disclosure of secrets without explicit permission.
 
 ## Delegation boundary
 
-Multi-agent coordination pays off when investigation, implementation, or independent validation is
-substantial enough to justify the handoff. Handle trivial checks yourself — invoking OMP or Codex to
-satisfy the workflow on a task you could finish safely in a moment costs more than it returns.
+Use delegation when at least one of the following applies:
+
+- the root cause or best implementation strategy is not obvious from a local inspection;
+- investigation requires comparing multiple plausible explanations or approaches;
+- external documentation, APIs, SDK behavior, or specifications need research;
+- the change crosses logical component or architectural boundaries;
+- the change has meaningful security, compatibility, data-integrity, or operational risk;
+- implementation is large or complex enough that separating investigation, implementation, and
+  review would materially reduce error risk.
+
+Handle trivial, local, low-risk work directly when delegation would add more overhead than value.
+
+File count and diff size may be useful signals, but never use them as the sole criterion for
+delegation.
 
 Project-specific agent instructions and verification procedures take precedence over the generic
 guidance here.
