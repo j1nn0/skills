@@ -128,6 +128,10 @@ Delegated agents share none of your conversation. Every prompt must stand alone:
 and the concrete paths, commands, constraints, and criteria the agent needs, and repeat relevant
 findings rather than referring to earlier discussion the agent never saw.
 
+Each delegated prompt must also assign a **single-agent role**: OMP investigates or Codex implements
+the bounded handoff itself. Unless the orchestrator explicitly instructs otherwise, they must not
+invoke `agent-orchestration`, create further agent handoffs, or otherwise delegate their assigned work.
+
 **To OMP**, require a concise report with: conclusion; evidence and sources; relevant code, files,
 documentation, APIs, or specifications; constraints and impact; alternatives when relevant;
 hypothesis and confidence when applicable. Prefer precise references over prose.
