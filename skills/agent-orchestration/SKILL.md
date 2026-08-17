@@ -19,11 +19,11 @@ Use the `herdr` skill as the authority for pane and agent CLI syntax.
 
 ## Roles
 
-| Role                             | Agent         | Kind | Model / effort                                   |
-| -------------------------------- | ------------- | ---- | ------------------------------------------------ |
-| Orchestration, decisions, review | Current agent | —    | Current model                                    |
-| Investigation and research       | Pi `explorer` | `pi` | `opencode-go/deepseek-v4-flash`, `thinking: max` |
-| Implementation                   | Pi `fixer`    | `pi` | `openai-codex/gpt-5.6-luna`, `thinking: max`     |
+| Role | Agent | Kind | Model / effort |
+| --- | --- | --- | --- |
+| Orchestration, decisions, review | Current agent | — | Current model |
+| Investigation and research | Pi `explorer` | `pi` | `opencode-go/deepseek-v4-flash`, `thinking: max` |
+| Implementation | Pi `fixer` | `pi` | `openai-codex/gpt-5.6-luna`, `thinking: max` |
 
 The explorer is read-only. Only the fixer intentionally modifies project files.
 
@@ -42,9 +42,7 @@ Before delegation:
 1. Run `herdr agent list` and `herdr agent`; confirm the `pi` kind is available.
 2. Resolve each required agent slot:
    1. Check whether the named agent is live.
-   2. If its kind, model, and thinking level match the table above, reuse it. For the fixer, also
-      confirm that `context-mode` is disabled while the rest of Pi's normal extension set remains
-      available; if this cannot be confirmed, restart or reconfigure it before delegation.
+   2. If its kind, model, and thinking level match the table above, reuse it.
    3. Otherwise send `/quit` and wait until it disappears from `herdr agent list`.
    4. Confirm with `herdr pane process-info --pane <id>` that its pane has returned to the
       interactive shell.
@@ -76,11 +74,8 @@ herdr agent start fixer --kind pi --pane <pane-id> -- \
   --no-autofix
 ```
 
-Both delegated agents use Pi's normal installed extensions, skills, and tools, except that the fixer
-must run with `context-mode` disabled. Disable only `context-mode`; do not use `--no-extensions`, and
-do not disable unrelated extensions. If selective disablement cannot be established without changing
-the rest of the fixer's normal extension set, stop fixer delegation rather than disabling all
-extensions. The skill otherwise pins only the role-specific model and thinking level.
+Both delegated agents intentionally use Pi's normal installed extensions, skills, and tools. The
+skill pins only the role-specific model and thinking level.
 
 ## Workflow
 
