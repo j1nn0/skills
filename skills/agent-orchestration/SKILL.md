@@ -37,42 +37,67 @@ test "${HERDR_ENV:-}" = 1
 
 If that fails, do the task yourself. Do not run Pi in the orchestrator pane as a substitute.
 
+All delegated agents must run in the orchestrator's current tab. Treat `$HERDR_TAB_ID` as a hard
+placement and reuse boundary. Never use an agent or pane from another tab for explorer or fixer.
+
 Before delegation:
 
 1. Run `herdr agent list` and `herdr agent`; confirm the `pi` kind is available.
 2. Resolve each required agent slot:
    1. Check whether the named agent is live.
-   2. If its kind, model, and thinking level match the table above, reuse it.
-   3. Otherwise send `/quit` and wait until it disappears from `herdr agent list`.
-   4. Confirm with `herdr pane process-info --pane <id>` that its pane has returned to the
+   2. Reuse it only if its `tab_id` equals `$HERDR_TAB_ID` and its kind, model, and thinking level
+      match the table above.
+   3. Never reuse, stop, replace, or repurpose an agent from another tab.
+   4. If an agent with the preferred name exists in another tab, choose a unique name for the
+      same-tab agent and use that resolved name for all later commands.
+   5. If a same-tab agent has the wrong configuration, send `/quit` and wait until it disappears
+      from `herdr agent list`.
+   6. Confirm with `herdr pane process-info --pane <id>` that its pane has returned to the
       interactive shell.
-   5. If shutdown or shell availability cannot be confirmed, stop delegation for that role.
-3. Resolve `<pane-id>` with `herdr pane list`. Use only a pane whose process info shows an available
-   interactive shell with no foreground agent, editor, or command. If none exists, create a pane
-   according to the `herdr` skill and use the pane ID returned by Herdr. Never guess a pane ID.
-4. Start the role with its pinned command below.
-5. If any required kind, model, thinking level, pane, or start operation fails, stop delegation for
-   that role. Never silently fall back to a different configuration.
+   7. If shutdown or shell availability cannot be confirmed, stop delegation for that role.
+3. Resolve `<pane-id>` only from panes in `$HERDR_TAB_ID`. A pane from another tab is never a valid
+   candidate, even if it is idle and in the same workspace.
+4. Use only a same-tab pane whose process info shows an available interactive shell with no
+   foreground agent, editor, or command.
+5. If no suitable same-tab pane exists, create one by splitting a pane that is already in
+   `$HERDR_TAB_ID`, normally the orchestrator pane:
+
+   ```bash
+   herdr pane split --current --direction right --cwd "$PWD" --no-focus
+   ```
+
+   Use the pane ID returned by Herdr. Never select a free pane from another tab as a substitute.
+6. Start the role with its pinned command below.
+7. After startup, verify with `herdr agent get <resolved-name>` that its `tab_id` equals
+   `$HERDR_TAB_ID`. If it does not, stop delegation for that role.
+8. If any required kind, model, thinking level, pane, or start operation fails, stop delegation for
+   that role. Never silently fall back to a different configuration or another tab.
 
 ### Explorer
 
 ```bash
-herdr agent start explorer --kind pi --pane <pane-id> -- \
+herdr agent start <explorer-name> --kind pi --pane <pane-id> -- \
   --model opencode-go/deepseek-v4-flash \
   --thinking max \
   --no-autoformat \
   --no-autofix
 ```
 
+Use `explorer` as `<explorer-name>` when available. If that name is already owned by an agent in
+another tab, choose a unique name for the same-tab explorer.
+
 ### Fixer
 
 ```bash
-herdr agent start fixer --kind pi --pane <pane-id> -- \
+herdr agent start <fixer-name> --kind pi --pane <pane-id> -- \
   --model openai-codex/gpt-5.6-luna \
   --thinking max \
   --no-autoformat \
   --no-autofix
 ```
+
+Use `fixer` as `<fixer-name>` when available. If that name is already owned by an agent in another
+tab, choose a unique name for the same-tab fixer.
 
 Both delegated agents intentionally use Pi's normal installed extensions, skills, and tools. The
 skill pins only the role-specific model and thinking level.
@@ -180,8 +205,9 @@ If retries produce no meaningful progress, change the approach or consult the us
 └──────────────────────────────┴──────────────────────┘
 ```
 
-Treat 50/25/25 as a preference. Preserve existing user-owned panes and readability; use the `herdr`
-skill for layout changes.
+Keep explorer and fixer in the orchestrator's current tab. Treat `$HERDR_TAB_ID` as an isolation
+boundary for delegated-agent placement and reuse. Preserve existing user-owned panes and readability;
+use the `herdr` skill for layout changes.
 
 ## Escalation
 
