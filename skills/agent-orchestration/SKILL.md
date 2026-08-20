@@ -328,12 +328,25 @@ Ignore:
 - blocks merely echoed from the prompt or quoted as examples;
 - result blocks from earlier prompts or sessions.
 
-If the current prompt produced no complete result block, ask the agent to
-re-emit only its final result without repeating the work.
+Read with `--source recent-unwrapped`. The default `recent` source is
+line-wrapped, so a long result can arrive with its tags and fields broken
+mid-line and look malformed when it is intact.
 
-Read with `--source recent-unwrapped` and enough `--lines` to cover the whole
-block. The default `recent` source is line-wrapped, so a long result can arrive
-with its tags and fields broken mid-line and look malformed when it is intact.
+When the block is missing or truncated, escalate in this order:
+
+1. Raise `--lines`. This recovers a block that merely scrolled past the default
+   window.
+2. If a higher `--lines` reveals nothing more, stop raising it. The agent is
+   drawing on the terminal's alternate screen, where rows that scroll away never
+   reach Herdr's scrollback, so no line count can bring them back.
+3. Ask the agent to re-emit only its final result without repeating the work.
+4. If the result is long enough to scroll away again, ask the agent to write its
+   complete response as Markdown to a temporary file and reply with the path
+   only, then read that file yourself.
+
+Keep step 4 as a fallback rather than folding it into the handoff. Routing every
+delegation through a file costs an extra round trip and a temporary file to
+solve a problem most units never hit.
 
 ## Waiting
 

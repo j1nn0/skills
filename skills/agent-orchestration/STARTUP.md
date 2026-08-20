@@ -41,21 +41,38 @@ Before using a delegated role:
    - confirm its pane has returned to an available interactive shell with
      `herdr pane process-info --pane <id>`.
 6. Use only an idle same-tab pane with no foreground agent, editor, or command.
-7. If no suitable pane exists, split a pane in `$HERDR_TAB_ID`, normally the
-   orchestrator pane, and use the resulting pane id in the start command:
+7. If no suitable pane exists, split a pane in `$HERDR_TAB_ID` and take the new
+   pane id from `.result.pane.pane_id`. Which pane you split, and in which
+   direction, depends on the role being placed:
 
    ```bash
-   herdr pane split --current --direction right --cwd "$PWD" --no-focus
+   # explorer: take the right half of the orchestrator pane
+   herdr pane split --current --direction right --ratio 0.5 --cwd "$PWD" --no-focus
+
+   # fixer: split the explorer's pane downward, not the orchestrator again
+   herdr pane split <explorer-pane-id> --direction down --ratio 0.5 --cwd "$PWD" --no-focus
    ```
 
-8. Start the role with the configuration settled for it.
+   Splitting the orchestrator pane to the right twice produces three narrow
+   columns instead of the layout above, and a column too narrow to render an
+   agent's UI is also a column whose output you cannot read. When the tab already
+   holds user panes, check the geometry first with
+   `herdr pane layout --pane "$HERDR_PANE_ID"` and place the split so no pane
+   becomes unusable.
+
+8. Start the role with the configuration settled for it. `agent start` returning
+   `agent_not_ready` is not a failed start: the agent was detected but is
+   blocked at a startup prompt, and its name stays usable for `herdr agent read`
+   and `herdr agent send-keys`. Inspect it, resolve the block under
+   "Permission and approval UIs" in `RECOVERY.md`, and wait for idle before
+   prompting. Do not re-run `agent start` and do not give up on the role.
 9. Verify after startup with `herdr agent get <resolved-name>` that its `tab_id`
    equals `$HERDR_TAB_ID`.
 
-If the kind, thinking level, pane, shutdown, or startup cannot be confirmed, stop
-delegation for that role. Never silently fall back to another configuration or
-tab. Handle the work directly when it is trivial enough to be safe; otherwise
-escalate under "Escalation" in `SKILL.md`.
+If the kind, thinking level, pane, shutdown, or startup cannot be confirmed after
+the recovery in step 8, stop delegation for that role. Never silently fall back
+to another configuration or tab. Handle the work directly when it is trivial
+enough to be safe; otherwise escalate under "Escalation" in `SKILL.md`.
 
 ## Role configuration
 

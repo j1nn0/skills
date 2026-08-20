@@ -56,8 +56,9 @@ After interruption, inspect the last output and choose one of:
 
 ## Permission and approval UIs
 
-An agent is `blocked` whenever Herdr recognizes an approval or question UI,
-whether it settled there or refused a submission with `agent_blocked`. Inspect
+An agent is `blocked` whenever Herdr recognizes an approval or question UI —
+because a prompt settled there, because a submission was refused with
+`agent_blocked`, or because `agent start` returned `agent_not_ready`. Inspect
 the cause before retrying. Handle expected permission prompts safely, and ask the
 user before answering one on their behalf. Never weaken or bypass the permission
 policy merely to make progress.

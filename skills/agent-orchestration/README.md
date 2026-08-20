@@ -32,4 +32,4 @@ existing `herdr` skill.
 | --- | --- |
 | `SKILL.md` | Roles, workflow, routing, per-role boundaries and handoff formats, review and retry. |
 | `STARTUP.md` | Pane layout, agent resolution and reuse rules, per-role model configuration and start commands. |
-| `RECOVERY.md` | Timeout, `blocked`, and stuck-agent handling. |
+| `RECOVERY.md` | Submission failures, timeout, `blocked`, and stuck-agent handling. |
