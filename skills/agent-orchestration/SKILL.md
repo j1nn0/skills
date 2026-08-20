@@ -1,63 +1,47 @@
 ---
 name: agent-orchestration
 description: >-
-  Orchestrates non-trivial software engineering work across three agents in a
-  Herdr session: the orchestrator (the current agent) owns strategy and review,
-  Pi `explorer` investigates and researches, and Pi `fixer` implements. Use this
-  whenever a task involves an unclear root cause, several plausible
-  explanations, unfamiliar code or architecture, research into external APIs,
-  SDKs, or specifications, or an implementation spanning multiple files or
-  components — even when the user does not mention agents, delegation, or
-  orchestration at all. Requires HERDR_ENV=1 and builds on the herdr skill for
-  pane and agent control. Do not use for trivial, local, low-risk tasks the
-  orchestrator can safely handle directly.
+  Delegates non-trivial engineering work to Pi `explorer` (investigation,
+  research) and Pi `fixer` (implementation) in a Herdr session, while the
+  current agent keeps strategy and review. Use when a root cause is unclear,
+  code or architecture is unfamiliar, an external API, SDK, or specification
+  needs research, or an implementation spans several files — even when the user
+  never mentions agents, delegation, or orchestration. Requires HERDR_ENV=1.
+  Handle trivial, local, low-risk work directly.
 ---
 
 # Agent Orchestration
 
 You remain the orchestrator and reviewer for the whole task.
 
+Project-specific instructions and verification procedures take precedence over
+this skill.
+
 Core principles:
 
 1. The orchestrator owns strategy, review, and completion, and defines the
    boundaries for delegated decisions.
-2. The explorer reduces uncertainty without intentionally modifying the project.
-3. The fixer implements a bounded strategy once it is sufficiently established.
+2. The explorer reduces uncertainty.
+3. The fixer implements a bounded strategy once it is **settled** — its evidence
+   is validated and no open question would change it.
 4. Explorer and fixer never hand work directly to each other. Every finding,
    decision, follow-up request, and implementation instruction passes through
    the orchestrator.
-5. Return to the explorer whenever meaningful uncertainty appears.
+5. Return to the explorer whenever uncertainty could change the strategy.
 6. Verify delegated results independently.
 
 Use the `herdr` skill as the authority for pane and agent CLI syntax.
 
 ## Roles
 
-| Role | Agent | Model / effort |
-| --- | --- | --- |
-| Orchestration, decisions, review | Orchestrator | Current model |
-| Investigation and research | Pi `explorer` | `opencode-go/deepseek-v4-flash`, `thinking: max` |
-| Implementation | Pi `fixer` | `openai-codex/gpt-5.6-luna`, `thinking: max` |
+| Role | Agent |
+| --- | --- |
+| Orchestration, decisions, review | Orchestrator (the current agent) |
+| Investigation and research | Pi `explorer` |
+| Implementation | Pi `fixer` |
 
 The explorer is read-only. The fixer may intentionally modify project files
 within delegated implementation work.
-
-## Recommended layout
-
-Prefer this layout when creating panes for delegated agents:
-
-```text
-┌──────────────────────────────┬──────────────────────┐
-│                              │       Explorer       │
-│                              │                      │
-│       Orchestrator           ├──────────────────────┤
-│                              │        Fixer         │
-│                              │                      │
-└──────────────────────────────┴──────────────────────┘
-```
-
-Keep the orchestrator on the left, with the explorer above the fixer on the
-right. Preserve existing user-owned panes when applying this layout.
 
 ## Startup
 
@@ -73,100 +57,16 @@ substitute.
 All delegated agents must run in the orchestrator's current tab. Treat
 `$HERDR_TAB_ID` as a hard placement and reuse boundary.
 
-Before using a delegated role:
-
-1. Run `herdr agent list` and `herdr agent`; confirm the `pi` kind is available.
-2. Reuse a live agent only when:
-   - its `tab_id` equals `$HERDR_TAB_ID`;
-   - its kind matches;
-   - its model matches;
-   - its thinking level matches.
-3. Never reuse, stop, replace, or repurpose an agent from another tab.
-4. If the preferred name belongs to an agent in another tab, choose a unique name
-   for the same-tab agent and use that resolved name thereafter.
-5. If a same-tab agent has the wrong configuration:
-   - send `/quit`;
-   - wait until it disappears from `herdr agent list`;
-   - confirm its pane has returned to an available interactive shell with
-     `herdr pane process-info --pane <id>`.
-6. Use only an idle same-tab pane with no foreground agent, editor, or command.
-7. If no suitable pane exists, split a pane in `$HERDR_TAB_ID`, normally the
-   orchestrator pane, and use the resulting pane id in the start command:
-
-   ```bash
-   herdr pane split --current --direction right --cwd "$PWD" --no-focus
-   ```
-
-8. Start the role with its pinned configuration.
-9. Verify after startup with `herdr agent get <resolved-name>` that its `tab_id`
-   equals `$HERDR_TAB_ID`.
-
-If the required kind, model, thinking level, pane, shutdown, or startup cannot be
-confirmed, stop delegation for that role. Never silently fall back to another
-model, configuration, or tab. Handle the work directly if it is trivial enough to
-be safe; otherwise escalate to the user when delegation is materially needed.
-
-### Explorer
-
-```bash
-herdr agent start <explorer-name> --kind pi --pane <pane-id> -- \
-  --model opencode-go/deepseek-v4-flash \
-  --thinking max \
-  --no-autoformat \
-  --no-autofix
-```
-
-Use `explorer` as `<explorer-name>` when available.
-
-### Fixer
-
-```bash
-herdr agent start <fixer-name> --kind pi --pane <pane-id> -- \
-  --model openai-codex/gpt-5.6-luna \
-  --thinking max \
-  --no-autoformat \
-  --no-autofix
-```
-
-Use `fixer` as `<fixer-name>` when available.
-
-Both delegated agents intentionally use Pi's normal installed extensions, skills,
-and tools. The skill pins only the role-specific model and thinking level.
-
-## Concurrency
-
-Do not run the explorer and the fixer concurrently on the same task.
-
-Do not run delegated implementation concurrently with any other work that may
-modify the same working tree.
-
-State consistency matters more here than parallelism. When in doubt, serialize
-work through the orchestrator.
-
-## Routing
-
-Do not treat orchestration as a fixed Explorer → Fixer pipeline. At every
-meaningful decision point, route work according to the current need, using the
-criteria in "Delegation boundary".
-
-The orchestrator must evaluate delegated output before deciding the next route.
-
-```text
-Explorer ↔ Orchestrator ↔ Fixer
-
-Typical flows:
-  Orchestrator
-  Explorer → Orchestrator
-  Fixer → Orchestrator
-  Explorer → Orchestrator → Fixer → Orchestrator
-  Orchestrator → Explorer → Orchestrator → Fixer → Orchestrator
-```
+Read [`STARTUP.md`](STARTUP.md) before the first delegation of a session, and
+whenever a role's agent is missing, lives in another tab, has the wrong model or
+thinking level, or needs a pane created. It holds the agent resolution steps, the
+pinned start commands, and the pane layout.
 
 ## Workflow
 
 1. Define the objective, constraints, scope, and completion criteria.
-2. Determine whether investigation, implementation, or direct handling is
-   appropriate.
+2. Route to investigation, implementation, or direct handling using the
+   delegation boundaries below.
 3. If investigation is needed, delegate to the explorer and evaluate its evidence
    and conclusions.
 4. Decide the implementation strategy and scope yourself.
@@ -174,81 +74,58 @@ Typical flows:
    the fixer.
 6. Review the actual diff and verification results yourself.
 7. Route follow-up work according to "Review and retry".
-8. Repeat only while meaningful progress is being made.
+8. Repeat from step 2, stopping at the bound in "Two attempts without progress".
 9. Confirm the completion criteria yourself.
+
+## Routing
+
+Route each step from the current need, using the delegation boundaries below.
+The orchestrator must evaluate delegated output before deciding the next route.
+
+```text
+Explorer ↔ Orchestrator ↔ Fixer
+```
+
+## Concurrency
+
+Run the explorer and the fixer one at a time on the same task. While the fixer is
+working, keep every other change to the same working tree paused.
+
+When in doubt, serialize work through the orchestrator.
 
 ## Handoffs
 
-Delegated agents do not share the orchestrator's conversation. The orchestrator
-is the only handoff boundary between delegated roles: explorer and fixer must
-never instruct, prompt, or delegate work directly to each other.
+Delegated agents do not share the orchestrator's conversation. A prompt that
+begins a new agent session must be standalone and assign one role only.
 
-A prompt that begins a new agent session must be standalone and assign one role
-only.
+A **unit** is one investigation question or one bounded implementation task.
+Follow-up prompts within the same unit may build on that agent's immediately
+preceding result, and must state the remaining question, defect, or objective.
 
-Follow-up prompts within the same investigation or implementation unit may build
-on that agent's immediately preceding result, but must clearly state the remaining
-question, defect, or objective.
+Delegated agents do their own work and report back; they invoke
+`agent-orchestration` or delegate further only when the orchestrator explicitly
+instructs it.
 
-Unless explicitly instructed by the orchestrator, delegated agents must not invoke
-`agent-orchestration` or delegate their own work.
+Require every delegated response to end with one concise `<HERDR_RESULT>` block,
+in the format given for that role.
 
-Require every delegated response to end with one concise final result block.
+## Explorer
 
-### Minimal example
+### When to use
 
-One pass through a delegated cycle looks like this:
+Use the explorer when:
 
-```bash
-# investigate
-herdr agent prompt <explorer-name> --wait -- '<standalone investigation prompt>'
-herdr agent read <explorer-name>
-```
+- the root cause is unclear;
+- multiple plausible explanations exist;
+- external documentation, APIs, SDK behavior, or specifications need research;
+- unfamiliar code or architecture requires investigation;
+- security, compatibility, data-integrity, or operational assumptions need
+  evidence.
 
-Evaluate the evidence, decide the strategy yourself, then:
+A large implementation whose strategy is already settled goes straight to the
+fixer.
 
-```bash
-# implement
-herdr agent prompt <fixer-name> --wait -- '<standalone implementation prompt>'
-herdr agent read <fixer-name>
-```
-
-Then review the result yourself before deciding the next route. See the `herdr`
-skill for full CLI syntax.
-
-### Session reuse
-
-Reuse the current session for follow-up that belongs to the same investigation or
-implementation unit, such as a remaining question, missing evidence, a review
-correction, a test failure caused by the current implementation, or completion of
-an incomplete part of the same bounded task.
-
-When reusing an existing delegated agent for a new independent unit, send `/new`
-and wait for it to settle before sending the next standalone prompt.
-
-Also start a fresh session when:
-
-- the task moves to a materially different problem;
-- the previous investigation or strategy is no longer relevant;
-- prior context is likely to bias or mislead the new session.
-
-Do not reset an agent merely because its work needs one or more corrections.
-
-### Reading results
-
-Use only the last complete `<HERDR_RESULT>` block emitted in response to the
-current prompt.
-
-Ignore:
-
-- preceding thinking or progress output;
-- blocks merely echoed from the prompt or quoted as examples;
-- result blocks from earlier prompts or sessions.
-
-If the current prompt produced no complete result block, ask the agent to
-re-emit only its final result without repeating the work.
-
-## Explorer handoff
+### Handoff
 
 Give the explorer:
 
@@ -269,22 +146,33 @@ Confidence: high | medium | low — <reason>
 </HERDR_RESULT>
 ```
 
-Evidence should identify relevant code, files, APIs, specifications, or external
-sources as appropriate. Prefer primary official sources for external technical
-research.
+Evidence must cite specific code, files, APIs, or specifications. Prefer primary
+official sources for external technical research.
 
 Treat the explorer's recommendation as input, not as the implementation decision.
 The orchestrator may pass validated evidence to the fixer, but must separately
 state the chosen strategy and implementation boundaries.
 
-Investigation may be iterative. Ask only for the missing evidence or unresolved
-question rather than a repeat of already-established findings.
+Ask only for the missing evidence or unresolved question rather than a repeat of
+already-established findings.
 
 If confidence remains too low to proceed safely, continue focused investigation or
 escalate rather than turning an uncertain conclusion into an implementation
 instruction.
 
-## Fixer handoff
+## Fixer
+
+### When to use
+
+Use the fixer when the strategy is settled and implementation is non-trivial,
+including when:
+
+- multiple files or components must change;
+- independent implementation reduces implementation or review risk.
+
+Send unresolved questions to the explorer first.
+
+### Handoff
 
 Give the fixer:
 
@@ -311,47 +199,71 @@ Remaining issues:
 If the fixer encounters unresolved uncertainty, it must report that uncertainty
 to the orchestrator rather than resolving it by guesswork.
 
-## Waiting and recovery
+## Direct handling
 
-`herdr agent prompt <name> --wait` settling on `idle`, `done`, or `blocked` is
-authoritative when the integration is healthy.
+Handle work directly when it is trivial, local, low-risk, and delegation would
+add more overhead than value.
 
-A timeout alone does not mean the agent is stuck.
+## Delegation mechanics
 
-After a timeout, inspect:
+### Minimal example
 
-- `herdr agent get`;
-- recent output with `herdr agent read`;
-- the foreground process state when relevant.
-
-No new agent output by itself is not evidence of failure. Long-running tests,
-builds, analysis, searches, or other commands may legitimately remain quiet.
-
-Interrupt with:
+One pass through a delegated cycle looks like this:
 
 ```bash
-herdr agent send-keys <name> ctrl+c
+# investigate
+herdr agent prompt <explorer-name> '<standalone investigation prompt>' --wait
+herdr agent read <explorer-name>
 ```
 
-only when there is no evidence of meaningful progress or the agent is clearly
-stuck.
+Evaluate the evidence, decide the strategy yourself, then:
 
-After interruption, inspect the last output and choose one of:
+```bash
+# implement
+herdr agent prompt <fixer-name> '<standalone implementation prompt>' --wait
+herdr agent read <fixer-name>
+```
 
-- continue with a more focused prompt;
-- reduce the task scope;
-- return to the explorer if the cause is uncertain;
-- change the strategy;
-- escalate.
+Then review the result yourself before deciding the next route.
 
-If an agent is `blocked`, inspect the cause before retrying. Handle expected
-permission prompts safely; never weaken or bypass the permission policy merely
-to make progress.
+### Session reuse
+
+Keep an agent's session for the whole unit: remaining questions, missing
+evidence, a review correction, a test failure caused by the current
+implementation, and completion of an unfinished part all belong to it. Repeated
+corrections stay in the same unit.
+
+Send `/new` and wait for it to settle when the next prompt opens a different
+unit — a materially different problem, a strategy that has been abandoned, or
+work that prior context would bias.
+
+### Reading results
+
+Use only the last complete `<HERDR_RESULT>` block emitted in response to the
+current prompt.
+
+Ignore:
+
+- preceding thinking or progress output;
+- blocks merely echoed from the prompt or quoted as examples;
+- result blocks from earlier prompts or sessions.
+
+If the current prompt produced no complete result block, ask the agent to
+re-emit only its final result without repeating the work.
+
+## Waiting
+
+`herdr agent prompt --wait` settling on `idle`, `done`, or `blocked` is
+authoritative when the integration is healthy.
+
+Read [`RECOVERY.md`](RECOVERY.md) when a prompt times out, an agent settles on
+`blocked`, or an agent appears stuck. It holds the inspection order, when
+interrupting is justified, and the routes out.
 
 ## Review and retry
 
-Verify independently. Do not trust the fixer's report as proof of completion.
-Read the actual diff and run the project's own appropriate verification.
+Treat the fixer's report as a claim. Read the actual diff and run the project's
+own appropriate verification.
 
 Review for:
 
@@ -379,14 +291,13 @@ implementation step.
 Re-evaluate the evidence and strategy yourself before asking the fixer to make
 further changes.
 
-### No meaningful progress
+### Two attempts without progress
 
-If two consecutive attempts on the same issue produce no meaningful progress,
-stop retrying the same approach. Re-evaluate the evidence and strategy, use the
-explorer if uncertainty remains, and escalate to the user if no materially
-different safe approach is available.
-
-Do not stack local fixes on a recurring problem.
+An attempt makes progress when it changes the observed failure or resolves one of
+the review findings above. After two consecutive attempts on the same issue make
+none, change approach: re-evaluate the evidence and strategy, use the explorer
+if uncertainty remains, and escalate to the user when no materially different
+safe approach is available.
 
 ## Escalation
 
@@ -397,8 +308,8 @@ Consult the user when:
 - destructive or irreversible work is required;
 - scope would expand substantially;
 - security or important data may be affected;
-- investigation cannot establish a sufficiently safe approach;
-- delegation is materially needed but a required role cannot be configured.
+- investigation cannot establish a safe approach;
+- delegation is needed but a required role cannot be configured.
 
 Never perform destructive or irreversible operations, out-of-scope changes, or
 unnecessary access to secrets without explicit permission.
@@ -408,48 +319,10 @@ unnecessary access to secrets without explicit permission.
 On normal completion:
 
 - leave correctly configured delegated agents running for reuse;
-- leave panes intact;
-- do not close or rearrange user-owned panes;
-- do not `/quit` agents merely because the current task completed.
+- leave panes intact, including user-owned panes.
 
 Stop an agent only when:
 
 - its configuration must be replaced;
 - it is unhealthy or unusable;
 - the user explicitly asks for cleanup.
-
-## Delegation boundary
-
-### Explorer
-
-Use the explorer when investigation would materially reduce uncertainty, including
-when:
-
-- the root cause is unclear;
-- multiple plausible explanations exist;
-- external documentation, APIs, SDK behavior, or specifications need research;
-- unfamiliar code or architecture requires investigation;
-- security, compatibility, data-integrity, or operational assumptions need
-  evidence.
-
-Do not use the explorer merely because implementation is large.
-
-### Fixer
-
-Use the fixer when the implementation strategy is sufficiently established and
-implementation is non-trivial, including when:
-
-- multiple files or components must change;
-- implementation complexity is meaningful;
-- independent implementation materially reduces implementation or review risk.
-
-Do not send unresolved investigation questions to the fixer as implementation
-tasks.
-
-### Direct handling
-
-Handle work directly when it is trivial, local, low-risk, and delegation would
-add more overhead than value.
-
-Project-specific instructions and verification procedures take precedence over
-this skill.

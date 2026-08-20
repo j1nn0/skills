@@ -2,40 +2,33 @@
 
 A reusable skill for coordinating non-trivial software engineering work through Herdr.
 
-| Role | Agent | Model / effort |
-| --- | --- | --- |
-| Orchestration, decisions, review | Current agent | Current model |
-| Investigation and research | Pi `explorer` | `opencode-go/deepseek-v4-flash`, `thinking: max` |
-| Implementation | Pi `fixer` | `openai-codex/gpt-5.6-luna`, `thinking: max` |
+| Role | Agent |
+| --- | --- |
+| Orchestration, decisions, review | Orchestrator (the current agent) |
+| Investigation and research | Pi `explorer` |
+| Implementation | Pi `fixer` |
 
-The current agent owns strategy, review, and completion. `explorer` is read-only by role; `fixer` owns
+The orchestrator owns strategy, review, and completion. `explorer` is read-only by role; `fixer` owns
 project file changes. Both delegated agents use their normal installed Pi extensions, skills, and tools,
-with only the role-specific model and thinking level pinned.
+with only the role-specific model and thinking level pinned — see `STARTUP.md` for the pinned values.
 
-The workflow is:
+Work is routed, not piped:
 
 ```text
-explorer investigation
-        ↓
-orchestrator evaluation / strategy
-        ↓
-fixer implementation
-        ↓
-orchestrator review / verification
+Explorer ↔ Orchestrator ↔ Fixer
 ```
+
+The orchestrator chooses the next route at every decision point according to the current need, rather
+than running a fixed explorer → fixer pipeline. Every finding, decision, and instruction passes
+through it; `explorer` and `fixer` never hand work directly to each other.
 
 The skill requires `HERDR_ENV=1`. Herdr pane and agent mechanics remain the responsibility of the
 existing `herdr` skill.
 
-## Recommended layout
+## Files
 
-```text
-┌──────────────────────────────┬──────────────────────┐
-│                              │       Explorer       │
-│      Current agent           ├──────────────────────┤
-│        ~50%                  │        Fixer         │
-└──────────────────────────────┴──────────────────────┘
-```
-
-See `SKILL.md` for the pinned startup commands, handoff rules, recovery behavior, and delegation
-boundary.
+| File | Contents |
+| --- | --- |
+| `SKILL.md` | Roles, workflow, routing, per-role boundaries and handoff formats, review and retry. |
+| `STARTUP.md` | Pane layout, agent resolution and reuse rules, pinned start commands. |
+| `RECOVERY.md` | Timeout, `blocked`, and stuck-agent handling. |

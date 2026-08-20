@@ -1,5 +1,5 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-07-07 | Updated: 2026-07-16 -->
+<!-- Generated: 2026-07-07 | Updated: 2026-08-20 -->
 
 # skills
 
@@ -19,7 +19,7 @@ No standalone files are expected here. Put each skill's entry point in its own `
 | `blog-idea-grilling/` | Japanese blog-idea development skill that produces a planning card. |
 | `fact-check-ja/` | Japanese fact-verification skill: checks article claims against primary sources and rewrites unverified ones. |
 | `blog-ops/` | Entry-point skill for Hugo blog operations: routes to planning/writing/fact-checking skills, new-post setup, post revision, pre-publish checks, tag management, and repo conventions. |
-| `agent-orchestration/` | Orchestrates engineering work across three agents in a Herdr session: the current agent orchestrates and reviews, Pi `explorer` investigates, and Pi `fixer` implements. Use it when delegation materially reduces uncertainty, implementation risk, or review risk. Requires HERDR_ENV=1; builds on the herdr skill. |
+| `agent-orchestration/` | Delegates non-trivial engineering work in a Herdr session: the current agent keeps strategy and review, Pi `explorer` investigates and researches, and Pi `fixer` implements. Use it when a root cause is unclear, code or architecture is unfamiliar, an external API, SDK, or specification needs research, or an implementation spans several files. Requires HERDR_ENV=1; builds on the herdr skill. Startup and recovery detail live in the skill's `STARTUP.md` and `RECOVERY.md`. |
 | `continuous-improvement-loop/` | Runs reviewable autonomous engineering-improvement rounds until the repository converges. Reassesses and selects one improvement per round, then uses `agent-orchestration` for rounds that warrant delegation. |
 
 ## For AI Agents
