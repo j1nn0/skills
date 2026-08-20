@@ -17,18 +17,15 @@ You remain the orchestrator and reviewer for the whole task.
 Project-specific instructions and verification procedures take precedence over
 this skill.
 
-Core principles:
+Work is routed, not piped:
 
-1. The orchestrator owns strategy, review, and completion, and defines the
-   boundaries for delegated decisions.
-2. The explorer reduces uncertainty.
-3. The fixer implements a bounded strategy once it is **settled** — its evidence
-   is validated and no open question would change it.
-4. Explorer and fixer never hand work directly to each other. Every finding,
-   decision, follow-up request, and implementation instruction passes through
-   the orchestrator.
-5. Return to the explorer whenever uncertainty could change the strategy.
-6. Verify delegated results independently.
+```text
+Explorer ↔ Orchestrator ↔ Fixer
+```
+
+The explorer and the fixer never hand work to each other. Every finding,
+decision, follow-up request, and implementation instruction passes through you,
+and you evaluate delegated output before choosing the next route.
 
 Use the `herdr` skill as the authority for pane and agent CLI syntax.
 
@@ -40,8 +37,9 @@ Use the `herdr` skill as the authority for pane and agent CLI syntax.
 | Investigation and research | Pi `explorer` |
 | Implementation | Pi `fixer` |
 
-The explorer is read-only. The fixer may intentionally modify project files
-within delegated implementation work.
+The explorer is read-only and the fixer may intentionally modify project files
+within delegated implementation work. Neither agent can read this skill or your
+conversation, so each role boundary only exists if the handoff prompt states it.
 
 ## Startup
 
@@ -60,13 +58,14 @@ All delegated agents must run in the orchestrator's current tab. Treat
 Read [`STARTUP.md`](STARTUP.md) before the first delegation of a session, and
 whenever a role's agent is missing, lives in another tab, has the wrong model or
 thinking level, or needs a pane created. It holds the agent resolution steps, the
-pinned start commands, and the pane layout.
+per-role model configuration and start commands, and the pane layout.
 
 ## Workflow
 
 1. Define the objective, constraints, scope, and completion criteria.
 2. Route to investigation, implementation, or direct handling using the
-   delegation boundaries below.
+   delegation boundaries below. Handle work yourself when it is trivial, local,
+   and low-risk enough that delegation would cost more than it returns.
 3. If investigation is needed, delegate to the explorer and evaluate its evidence
    and conclusions.
 4. Decide the implementation strategy and scope yourself.
@@ -76,15 +75,6 @@ pinned start commands, and the pane layout.
 7. Route follow-up work according to "Review and retry".
 8. Repeat from step 2, stopping at the bound in "Two attempts without progress".
 9. Confirm the completion criteria yourself.
-
-## Routing
-
-Route each step from the current need, using the delegation boundaries below.
-The orchestrator must evaluate delegated output before deciding the next route.
-
-```text
-Explorer ↔ Orchestrator ↔ Fixer
-```
 
 ## Concurrency
 
@@ -129,14 +119,53 @@ fixer.
 
 Give the explorer:
 
+- that this is investigation only, with no file, state, or environment changes;
 - the objective;
 - relevant paths, systems, or APIs;
 - constraints;
 - the specific questions to answer.
 
+The read-only instruction has to be in the prompt. An investigation agent that
+was not told to keep its hands off will often "helpfully" apply the fix it
+found, which destroys the separation this skill depends on.
+
 Require this result format:
 
 ```text
+<HERDR_RESULT>
+Conclusion:
+Evidence:
+Impact:
+Recommendation:
+Confidence: high | medium | low — <reason>
+</HERDR_RESULT>
+```
+
+A complete handoff looks like this — one role, explicit boundaries, and enough
+context to stand alone:
+
+```text
+You are investigating a defect in the repository at /srv/api. This is a
+read-only investigation: do not edit files, run migrations, or change any
+state. Another agent will implement the fix.
+
+Objective: determine why POST /v1/orders intermittently returns 500 under
+concurrent requests.
+
+Relevant paths: src/orders/handler.py, src/orders/repository.py,
+src/db/session.py.
+
+Constraints: PostgreSQL 16, SQLAlchemy 2.0. Reproduce using the existing test
+suite only. Do not touch the staging database.
+
+Questions to answer:
+1. Which code path produces the 500, and what exception reaches it?
+2. Is the cause session lifecycle, transaction boundaries, or application
+   logic?
+3. Which of those is supported by evidence rather than inference?
+
+End your response with exactly one block in this format and nothing after it:
+
 <HERDR_RESULT>
 Conclusion:
 Evidence:
@@ -164,8 +193,9 @@ instruction.
 
 ### When to use
 
-Use the fixer when the strategy is settled and implementation is non-trivial,
-including when:
+Use the fixer once the strategy is **settled** — its evidence is validated and no
+open question would change it — and implementation is non-trivial, including
+when:
 
 - multiple files or components must change;
 - independent implementation reduces implementation or review risk.
@@ -197,12 +227,49 @@ Remaining issues:
 ```
 
 If the fixer encounters unresolved uncertainty, it must report that uncertainty
-to the orchestrator rather than resolving it by guesswork.
+to the orchestrator rather than resolving it by guesswork. Say so in the prompt:
+an implementation agent left to its own devices will usually pick something
+plausible and keep going, and that guess arrives disguised as a finished change.
 
-## Direct handling
+A complete handoff looks like this — the strategy is already decided, and what
+is left open is only the local implementation detail:
 
-Handle work directly when it is trivial, local, low-risk, and delegation would
-add more overhead than value.
+```text
+You are implementing a bounded change in the repository at /srv/api.
+
+Objective: make POST /v1/orders safe under concurrent requests.
+
+Validated evidence: src/db/session.py:41 builds one Session at import time and
+shares it across request handlers, so concurrent requests interleave on a
+single transaction. This has been confirmed; treat it as settled.
+
+Chosen strategy: scope the Session to the request with a per-request
+sessionmaker dependency. Do not add a connection-pool library and do not
+change the ORM layer.
+
+Scope: src/db/session.py and src/orders/handler.py only. Leave
+src/orders/repository.py unchanged.
+
+Constraints: no schema migration, no new dependency, and the public handler
+signature stays as it is.
+
+Completion criteria: pytest tests/orders passes, and
+tests/orders/test_concurrent_post.py fails before your change and passes
+after it.
+
+Make the local implementation decisions inside those boundaries yourself. If
+any part of this instruction turns out to be wrong or underdetermined, stop
+and report it instead of guessing.
+
+End your response with exactly one block in this format and nothing after it:
+
+<HERDR_RESULT>
+Changes:
+Verification:
+- <command>: <result>
+Remaining issues:
+</HERDR_RESULT>
+```
 
 ## Delegation mechanics
 
@@ -212,16 +279,18 @@ One pass through a delegated cycle looks like this:
 
 ```bash
 # investigate
+herdr agent get <explorer-name>   # confirm idle before prompting
 herdr agent prompt <explorer-name> '<standalone investigation prompt>' --wait
-herdr agent read <explorer-name>
+herdr agent read <explorer-name> --source recent-unwrapped --lines 200
 ```
 
 Evaluate the evidence, decide the strategy yourself, then:
 
 ```bash
 # implement
+herdr agent get <fixer-name>
 herdr agent prompt <fixer-name> '<standalone implementation prompt>' --wait
-herdr agent read <fixer-name>
+herdr agent read <fixer-name> --source recent-unwrapped --lines 200
 ```
 
 Then review the result yourself before deciding the next route.
@@ -233,9 +302,20 @@ evidence, a review correction, a test failure caused by the current
 implementation, and completion of an unfinished part all belong to it. Repeated
 corrections stay in the same unit.
 
-Send `/new` and wait for it to settle when the next prompt opens a different
-unit — a materially different problem, a strategy that has been abandoned, or
-work that prior context would bias.
+Start a new session when the next prompt opens a different unit — a materially
+different problem, a strategy that has been abandoned, or work that prior
+context would bias:
+
+```bash
+herdr agent prompt <name> '/new'
+herdr agent get <name>
+```
+
+`/new` goes through the same submission path as a prompt, but it clears context
+instead of running a turn. Omit `--wait` here: with no turn to observe, the wait
+can report `agent_prompt_stalled` even though the command worked. Confirm with
+`agent get` that the agent is still present and ready for input, then send the
+first prompt of the new unit.
 
 ### Reading results
 
@@ -251,14 +331,26 @@ Ignore:
 If the current prompt produced no complete result block, ask the agent to
 re-emit only its final result without repeating the work.
 
+Read with `--source recent-unwrapped` and enough `--lines` to cover the whole
+block. The default `recent` source is line-wrapped, so a long result can arrive
+with its tags and fields broken mid-line and look malformed when it is intact.
+
 ## Waiting
 
 `herdr agent prompt --wait` settling on `idle`, `done`, or `blocked` is
 authoritative when the integration is healthy.
 
-Read [`RECOVERY.md`](RECOVERY.md) when a prompt times out, an agent settles on
-`blocked`, or an agent appears stuck. It holds the inspection order, when
-interrupting is justified, and the routes out.
+It does not track turns, though. Prompting an agent that is already working lets
+the wait match that earlier turn finishing, and the read then returns the
+previous turn's result — a stale `<HERDR_RESULT>` that reads as an answer to the
+prompt you just sent. Confirm the agent is idle with `herdr agent get` before
+prompting, rather than trying to detect staleness afterwards: once you hold a
+plausible-looking block, nothing in it tells you which prompt produced it.
+
+Read [`RECOVERY.md`](RECOVERY.md) when a prompt is rejected before it reaches the
+agent, times out, settles on `blocked`, or an agent appears stuck. It holds the
+submission failures, the inspection order, when interrupting is justified, and
+the routes out.
 
 ## Review and retry
 

@@ -11,10 +11,10 @@ Prefer this layout when creating panes for delegated agents:
 ```text
 ┌──────────────────────────────┬──────────────────────┐
 │                              │       Explorer       │
-│                              │                      │
-│       Orchestrator           ├──────────────────────┤
-│                              │        Fixer         │
-│                              │                      │
+│                              │         ~25%         │
+│      Current agent           ├──────────────────────┤
+│        Orchestrator          │        Fixer         │
+│           ~50%               │         ~25%         │
 └──────────────────────────────┴──────────────────────┘
 ```
 
@@ -29,13 +29,14 @@ Before using a delegated role:
 2. Reuse a live agent only when:
    - its `tab_id` equals `$HERDR_TAB_ID`;
    - its kind matches;
-   - its model matches;
-   - its thinking level matches.
+   - its model and thinking level match the configuration settled for that role
+     in this session — the default below, or the substitute the user approved.
 3. Never reuse, stop, replace, or repurpose an agent from another tab.
 4. If the preferred name belongs to an agent in another tab, choose a unique name
    for the same-tab agent and use that resolved name thereafter.
 5. If a same-tab agent has the wrong configuration:
-   - send `/quit`;
+   - send `herdr agent prompt <name> '/quit'` without `--wait`, since the agent
+     ends rather than settling into a state to wait for;
    - wait until it disappears from `herdr agent list`;
    - confirm its pane has returned to an available interactive shell with
      `herdr pane process-info --pane <id>`.
@@ -47,14 +48,37 @@ Before using a delegated role:
    herdr pane split --current --direction right --cwd "$PWD" --no-focus
    ```
 
-8. Start the role with its pinned configuration.
+8. Start the role with the configuration settled for it.
 9. Verify after startup with `herdr agent get <resolved-name>` that its `tab_id`
    equals `$HERDR_TAB_ID`.
 
-If the required kind, model, thinking level, pane, shutdown, or startup cannot be
-confirmed, stop delegation for that role. Never silently fall back to another
-model, configuration, or tab. Handle the work directly when it is trivial enough
-to be safe; otherwise escalate under "Escalation" in `SKILL.md`.
+If the kind, thinking level, pane, shutdown, or startup cannot be confirmed, stop
+delegation for that role. Never silently fall back to another configuration or
+tab. Handle the work directly when it is trivial enough to be safe; otherwise
+escalate under "Escalation" in `SKILL.md`.
+
+## Role configuration
+
+| Role | Model | Thinking |
+| --- | --- | --- |
+| Explorer | `opencode-go/deepseek-v4-flash` | `max` |
+| Fixer | `openai-codex/gpt-5.6-luna` | `max` |
+
+These are defaults chosen for the shape of each role — a fast high-reasoning
+model for investigation, a strong coding model for implementation — not
+requirements. A model only exists where its provider is configured, so this skill
+travels to installs that have neither.
+
+When a role's default model is unavailable, do not stop and do not pick a
+replacement on your own. Tell the user which model is missing and what the role
+needs, ask which model to use instead, and treat their answer as that role's
+configuration for the rest of the session. The property worth protecting is that
+the choice is deliberate and visible: a role quietly downgraded to whatever
+happened to be available produces delegated work whose quality you have no basis
+to trust, and the failure surfaces much later as a bad diff you accepted.
+
+The start commands below use the defaults. Substitute the approved model in
+`--model` when one was chosen.
 
 ## Explorer
 
@@ -81,4 +105,4 @@ herdr agent start <fixer-name> --kind pi --pane <pane-id> -- \
 Use `fixer` as `<fixer-name>` when available.
 
 Both delegated agents intentionally use Pi's normal installed extensions, skills,
-and tools. The skill pins only the role-specific model and thinking level.
+and tools. Only the role-specific model and thinking level are set here.

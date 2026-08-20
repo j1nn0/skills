@@ -10,7 +10,8 @@ A reusable skill for coordinating non-trivial software engineering work through 
 
 The orchestrator owns strategy, review, and completion. `explorer` is read-only by role; `fixer` owns
 project file changes. Both delegated agents use their normal installed Pi extensions, skills, and tools,
-with only the role-specific model and thinking level pinned — see `STARTUP.md` for the pinned values.
+with only the role-specific model and thinking level set — see `STARTUP.md` for the defaults and how
+to substitute a model that an install does not have.
 
 Work is routed, not piped:
 
@@ -30,5 +31,5 @@ existing `herdr` skill.
 | File | Contents |
 | --- | --- |
 | `SKILL.md` | Roles, workflow, routing, per-role boundaries and handoff formats, review and retry. |
-| `STARTUP.md` | Pane layout, agent resolution and reuse rules, pinned start commands. |
+| `STARTUP.md` | Pane layout, agent resolution and reuse rules, per-role model configuration and start commands. |
 | `RECOVERY.md` | Timeout, `blocked`, and stuck-agent handling. |
