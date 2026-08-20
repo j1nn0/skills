@@ -4,9 +4,9 @@ Agent and pane resolution for `agent-orchestration`. Read this before the first
 delegation of a session, and whenever a role's agent is missing, lives in another
 tab, has the wrong model or thinking level, or needs a pane created.
 
-## Recommended layout
+## Pane layout
 
-Prefer this layout when creating panes for delegated agents:
+Delegated agents share one right-hand column, explorer above fixer:
 
 ```text
 ┌──────────────────────────────┬──────────────────────┐
@@ -18,8 +18,18 @@ Prefer this layout when creating panes for delegated agents:
 └──────────────────────────────┴──────────────────────┘
 ```
 
-Keep the orchestrator on the left, with the explorer above the fixer on the
-right. Preserve existing user-owned panes when applying this layout.
+Treat "one column, explorer on top" as an invariant to satisfy, not a sequence of
+splits to replay. The roles are not always created in the same order — a settled
+implementation goes straight to the fixer, so the fixer often exists before any
+explorer does — and placement has to reach the same layout whichever role arrived
+first.
+
+Stable position is the point. Anyone glancing at the screen, you or the user,
+should read the role off the position alone instead of checking which model is
+printed in which pane. Three columns, or an explorer sitting under a fixer, costs
+that on every look.
+
+Preserve existing user-owned panes when applying this layout.
 
 ## Resolution
 
@@ -40,23 +50,43 @@ Before using a delegated role:
    - wait until it disappears from `herdr agent list`;
    - confirm its pane has returned to an available interactive shell with
      `herdr pane process-info --pane <id>`.
-6. Use only an idle same-tab pane with no foreground agent, editor, or command.
-7. If no suitable pane exists, split a pane in `$HERDR_TAB_ID` and take the new
-   pane id from `.result.pane.pane_id`. Which pane you split, and in which
-   direction, depends on the role being placed:
+6. Use only an idle same-tab pane with no foreground agent, editor, or command,
+   and prefer one already sitting in the delegated column. An idle pane
+   elsewhere in the tab is usually the user's; taking it both breaks the layout
+   and takes something that is not yours.
+7. If no suitable pane exists, create one from the current state of the delegated
+   column rather than from the role you happen to be placing. Take the new pane
+   id from `.result.pane.pane_id`.
+
+   **The column does not exist yet** — split the orchestrator once, to the
+   right. Whichever role you are placing holds the whole column until the other
+   one arrives:
 
    ```bash
-   # explorer: take the right half of the orchestrator pane
    herdr pane split --current --direction right --ratio 0.5 --cwd "$PWD" --no-focus
-
-   # fixer: split the explorer's pane downward, not the orchestrator again
-   herdr pane split <explorer-pane-id> --direction down --ratio 0.5 --cwd "$PWD" --no-focus
    ```
 
-   Splitting the orchestrator pane to the right twice produces three narrow
-   columns instead of the layout above, and a column too narrow to render an
-   agent's UI is also a column whose output you cannot read. When the tab already
-   holds user panes, check the geometry first with
+   **The column already holds the other role** — split *that* pane downward,
+   never the orchestrator a second time:
+
+   ```bash
+   herdr pane split <occupied-column-pane-id> --direction down --ratio 0.5 --cwd "$PWD" --no-focus
+   ```
+
+   The new pane is the lower one, which is where the fixer belongs. When the role
+   you are placing is the explorer — the fixer got here first — start it in the
+   new pane, then exchange the two so the explorer ends up on top:
+
+   ```bash
+   herdr pane swap --source-pane <new-pane-id> --target-pane <fixer-pane-id>
+   ```
+
+   Splitting the orchestrator to the right a second time is what puts the
+   explorer and fixer side by side in three columns. It also narrows every column
+   past the width an agent's UI needs, and a column that cannot render is a
+   column whose output you cannot read.
+
+   When the tab already holds user panes, check the geometry first with
    `herdr pane layout --pane "$HERDR_PANE_ID"` and place the split so no pane
    becomes unusable.
 
@@ -67,7 +97,16 @@ Before using a delegated role:
    "Permission and approval UIs" in `RECOVERY.md`, and wait for idle before
    prompting. Do not re-run `agent start` and do not give up on the role.
 9. Verify after startup with `herdr agent get <resolved-name>` that its `tab_id`
-   equals `$HERDR_TAB_ID`.
+   equals `$HERDR_TAB_ID`. Once both roles are live, confirm the order rather
+   than assuming the splits landed as intended:
+
+   ```bash
+   herdr pane neighbor --direction down --pane <explorer-pane-id>
+   ```
+
+   It must return the fixer's pane. If it returns nothing or another pane, the
+   layout is wrong — correct it with `herdr pane swap` now, while you still know
+   which pane holds which role.
 
 If the kind, thinking level, pane, shutdown, or startup cannot be confirmed after
 the recovery in step 8, stop delegation for that role. Never silently fall back
