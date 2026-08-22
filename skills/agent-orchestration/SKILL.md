@@ -3,11 +3,13 @@ name: agent-orchestration
 description: >-
   Delegates non-trivial engineering work to Pi `explorer` (investigation,
   research) and Pi `fixer` (implementation) in a Herdr session, while the
-  current agent keeps strategy and review. Use when a root cause is unclear,
-  code or architecture is unfamiliar, an external API, SDK, or specification
-  needs research, or an implementation spans several files — even when the user
-  never mentions agents, delegation, or orchestration. Requires HERDR_ENV=1.
-  Handle trivial, local, low-risk work directly.
+  current top-level agent keeps strategy and review. Use when a root cause is
+  unclear, code or architecture is unfamiliar, an external API, SDK, or
+  specification needs research, or an implementation spans several files —
+  even when the user never mentions agents, delegation, or orchestration.
+  Do not use when the current agent was itself delegated work as an `explorer`
+  or `fixer`. Requires HERDR_ENV=1. Handle trivial, local, low-risk work
+  directly.
 ---
 
 # Agent Orchestration
@@ -92,9 +94,9 @@ A **unit** is one investigation question or one bounded implementation task.
 Follow-up prompts within the same unit may build on that agent's immediately
 preceding result, and must state the remaining question, defect, or objective.
 
-Delegated agents do their own work and report back; they invoke
-`agent-orchestration` or delegate further only when the orchestrator explicitly
-instructs it.
+Delegated agents do their own work and report back. They never invoke
+`agent-orchestration`, delegate further, or run Herdr agent or pane control
+commands.
 
 Require every delegated response to end with one concise `<HERDR_RESULT>` block,
 in the format given for that role.
@@ -120,14 +122,16 @@ fixer.
 Give the explorer:
 
 - that this is investigation only, with no file, state, or environment changes;
+- that it is a delegated explorer, not the orchestrator, and must not invoke
+  `agent-orchestration`, delegate further, or control Herdr agents or panes;
 - the objective;
 - relevant paths, systems, or APIs;
 - constraints;
 - the specific questions to answer.
 
 The read-only instruction has to be in the prompt. An investigation agent that
-was not told to keep its hands off will often "helpfully" apply the fix it
-found, which destroys the separation this skill depends on.
+was not told to keep its hands off will often "helpfully" apply the fix it found,
+which destroys the separation this skill depends on.
 
 Require this result format:
 
@@ -145,6 +149,10 @@ A complete handoff looks like this — one role, explicit boundaries, and enough
 context to stand alone:
 
 ```text
+You are a delegated explorer, not the orchestrator. Do not invoke
+agent-orchestration, delegate work to other agents, or run Herdr agent or pane
+control commands.
+
 You are investigating a defect in the repository at /srv/api. This is a
 read-only investigation: do not edit files, run migrations, or change any
 state. Another agent will implement the fix.
@@ -206,6 +214,8 @@ Send unresolved questions to the explorer first.
 
 Give the fixer:
 
+- that it is a delegated fixer, not the orchestrator, and must not invoke
+  `agent-orchestration`, delegate further, or control Herdr agents or panes;
 - the objective;
 - bounded implementation scope;
 - constraints;
@@ -235,6 +245,10 @@ A complete handoff looks like this — the strategy is already decided, and what
 is left open is only the local implementation detail:
 
 ```text
+You are a delegated fixer, not the orchestrator. Do not invoke
+agent-orchestration, delegate work to other agents, or run Herdr agent or pane
+control commands.
+
 You are implementing a bounded change in the repository at /srv/api.
 
 Objective: make POST /v1/orders safe under concurrent requests.
