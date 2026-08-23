@@ -66,7 +66,7 @@ Before using a delegated role:
    herdr pane split --current --direction right --ratio 0.5 --cwd "$PWD" --no-focus
    ```
 
-   **The column already holds the other role** — split *that* pane downward,
+   **The column already holds the other role** — split _that_ pane downward,
    never the orchestrator a second time:
 
    ```bash
@@ -115,10 +115,10 @@ enough to be safe; otherwise escalate under "Escalation" in `SKILL.md`.
 
 ## Role configuration
 
-| Role | Model | Thinking |
-| --- | --- | --- |
-| Explorer | `opencode-go/deepseek-v4-flash` | `max` |
-| Fixer | `openai-codex/gpt-5.6-luna` | `max` |
+| Role     | Model                           | Thinking |
+| -------- | ------------------------------- | -------- |
+| Explorer | `opencode-go/deepseek-v4-flash` | `max`    |
+| Fixer    | `openai-codex/gpt-5.6-luna`     | `max`    |
 
 These are defaults chosen for the shape of each role — a fast high-reasoning
 model for investigation, a strong coding model for implementation — not
@@ -141,9 +141,7 @@ The start commands below use the defaults. Substitute the approved model in
 ```bash
 herdr agent start <explorer-name> --kind pi --pane <pane-id> -- \
   --model opencode-go/deepseek-v4-flash \
-  --thinking max \
-  --no-autoformat \
-  --no-autofix
+  --thinking max
 ```
 
 Use `explorer` as `<explorer-name>` when available.
@@ -153,9 +151,7 @@ Use `explorer` as `<explorer-name>` when available.
 ```bash
 herdr agent start <fixer-name> --kind pi --pane <pane-id> -- \
   --model openai-codex/gpt-5.6-luna \
-  --thinking max \
-  --no-autoformat \
-  --no-autofix
+  --thinking max
 ```
 
 Use `fixer` as `<fixer-name>` when available.
