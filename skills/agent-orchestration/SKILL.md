@@ -33,11 +33,11 @@ Use the `herdr` skill as the authority for pane and agent CLI syntax.
 
 ## Roles
 
-| Role | Agent |
-| --- | --- |
+| Role                             | Agent                            |
+| -------------------------------- | -------------------------------- |
 | Orchestration, decisions, review | Orchestrator (the current agent) |
-| Investigation and research | Pi `explorer` |
-| Implementation | Pi `fixer` |
+| Investigation and research       | Pi `explorer`                    |
+| Implementation                   | Pi `fixer`                       |
 
 The explorer is read-only and the fixer may intentionally modify project files
 within delegated implementation work. Neither agent can read this skill or your
@@ -316,20 +316,28 @@ evidence, a review correction, a test failure caused by the current
 implementation, and completion of an unfinished part all belong to it. Repeated
 corrections stay in the same unit.
 
-Start a new session when the next prompt opens a different unit — a materially
+Restart the agent when the next prompt opens a different unit — a materially
 different problem, a strategy that has been abandoned, or work that prior
-context would bias:
+context would bias. Do not use `/new`: a new Pi session may fall back to its
+default model instead of preserving the role's configured model.
+
+Before stopping the agent, record its pane and the role's settled model and
+thinking level. Then:
 
 ```bash
-herdr agent prompt <name> '/new'
 herdr agent get <name>
+herdr agent prompt <name> '/quit'
 ```
 
-`/new` goes through the same submission path as a prompt, but it clears context
-instead of running a turn. Omit `--wait` here: with no turn to observe, the wait
-can report `agent_prompt_stalled` even though the command worked. Confirm with
-`agent get` that the agent is still present and ready for input, then send the
-first prompt of the new unit.
+Omit `--wait` for `/quit`, since the agent exits rather than settling into a
+state to wait for. Wait until it disappears from `herdr agent list`, confirm its
+pane has returned to an available interactive shell, then restart the same role
+in that pane using the start command in [`STARTUP.md`](STARTUP.md). Explicitly
+pass the role's settled `--model` and `--thinking`; never rely on Pi's defaults.
+
+After restart, verify with `herdr agent get <name>` that the agent is in the
+current tab and that its model and thinking level match the settled role
+configuration before sending the first prompt of the new unit.
 
 ### Reading results
 
