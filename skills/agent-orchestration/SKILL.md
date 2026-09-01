@@ -68,15 +68,17 @@ per-role model configuration and start commands, and the pane layout.
 2. Route to investigation, implementation, or direct handling using the
    delegation boundaries below. Handle work yourself when it is trivial, local,
    and low-risk enough that delegation would cost more than it returns.
-3. If investigation is needed, delegate to the explorer and evaluate its evidence
-   and conclusions.
+3. If investigation is needed, delegate one appropriately sized investigation
+   unit to the explorer and evaluate its evidence and conclusions.
 4. Decide the implementation strategy and scope yourself.
-5. If implementation is non-trivial, delegate a bounded implementation unit to
-   the fixer.
-6. Review the actual diff and verification results yourself.
-7. Route follow-up work according to "Review and retry".
-8. Repeat from step 2, stopping at the bound in "Two attempts without progress".
-9. Confirm the completion criteria yourself.
+5. Before non-trivial implementation, size the work into bounded units using
+   "Unit sizing". Keep the overall plan yourself and select only the current
+   unit for delegation.
+6. Delegate the current bounded implementation unit to the fixer.
+7. Review the actual diff and verification results yourself.
+8. Route follow-up work according to "Review and retry".
+9. Repeat from step 2, stopping at the bound in "Two attempts without progress".
+10. Confirm the completion criteria yourself.
 
 ## Concurrency
 
@@ -90,9 +92,14 @@ When in doubt, serialize work through the orchestrator.
 Delegated agents do not share the orchestrator's conversation. A prompt that
 begins a new agent session must be standalone and assign one role only.
 
-A **unit** is one investigation question or one bounded implementation task.
-Follow-up prompts within the same unit may build on that agent's immediately
-preceding result, and must state the remaining question, defect, or objective.
+A **unit** is one focused investigation problem or one bounded implementation
+task. Follow-up prompts within the same unit may build on that agent's
+immediately preceding result, and must state the remaining question, defect, or
+objective.
+
+Use "Unit sizing" before sending a handoff when the work may require substantial
+code exploration, research, implementation, or verification. The orchestrator
+owns the overall task and plan; a delegated agent owns only its current unit.
 
 Delegated agents do their own work and report back. They never invoke
 `agent-orchestration`, delegate further, or run Herdr agent or pane control
@@ -100,6 +107,119 @@ commands.
 
 Require every delegated response to end with one concise `<HERDR_RESULT>` block,
 in the format given for that role.
+
+## Unit sizing
+
+Size delegated work by the **expected working context**, not by prompt length,
+file count, or a fixed token threshold. Prompt size is only a weak proxy: a
+short instruction can force an agent to load several subsystems and long test
+outputs, while a longer instruction can still describe one tightly bounded
+change.
+
+The goal is to keep each delegated agent focused on one coherent working set and
+to avoid making it retain detailed instructions for work that it is not yet
+performing.
+
+### A well-sized unit
+
+Before delegation, confirm that the current unit normally has all of these
+properties:
+
+- **one coherent outcome** — the purpose can be stated as one focused outcome,
+  not as several independently useful changes joined together;
+- **one cohesive boundary** — the relevant files, components, APIs, or research
+  areas serve the same immediate problem, even if several files are involved;
+- **independent verification** — the unit has a meaningful conclusion or
+  completion check that can be evaluated when the unit finishes;
+- **no detailed future dependency** — the agent does not need the detailed
+  implementation instructions for later units to perform the current one
+  correctly;
+- **focused working set** — the agent does not need to keep several unrelated
+  subsystems, concerns, phases, or large bodies of evidence in active context at
+  once.
+
+If one of these properties fails because the work contains a natural independent
+boundary, split before delegation. Do not force a task into one unit merely
+because it was originally requested as one task.
+
+### Strong split signals
+
+Prefer multiple ordered units when any of the following is true:
+
+- the handoff contains multiple outcomes that can be completed and reviewed
+  independently;
+- the work crosses natural subsystem, package, layer, or phase boundaries and
+  each side has its own meaningful completion condition;
+- different kinds of work are mixed even though they can be completed
+  separately, such as an enabling refactor plus a behavior change, a migration
+  plus application adoption, or implementation plus unrelated cleanup;
+- completing and verifying an earlier part can materially change what the next
+  part should do;
+- part of the completion criteria can be satisfied and reviewed before the rest;
+- the agent would need detailed later-step requirements that are irrelevant to
+  the code or evidence it is handling now;
+- the agent would have to explore several largely independent areas before it
+  could make progress on any one of them.
+
+Do not split mechanically by number of files, lines, questions, or prompt
+characters. Several files that jointly implement one behavior may be one unit,
+while one file containing multiple independent behavioral changes may require
+several units.
+
+Do not over-fragment tightly coupled work. If splitting would leave an
+intermediate state that cannot be meaningfully verified, would require the same
+context to be rediscovered immediately, or would separate changes that must be
+reasoned about atomically for correctness, keep them in one unit.
+
+### Reduce context before splitting
+
+A long handoff does not automatically mean the unit is too large. First remove
+context that the delegated agent does not need:
+
+- convert investigation history into validated evidence;
+- convert deliberation into the chosen decision or strategy;
+- omit rejected alternatives unless the current unit must avoid a specific
+  tempting but unsafe path;
+- omit transcripts, repeated findings, and already-resolved discussion;
+- include only constraints and cross-unit invariants that can affect the current
+  unit;
+- refer to relevant paths and interfaces instead of preloading unrelated code or
+  later-unit detail.
+
+Pass **settled state, not reasoning history**. If the handoff is still broad
+because the current agent would need several independent working sets, split it.
+
+### Progressive handoff
+
+For a larger task, the orchestrator may maintain an ordered internal plan such
+as:
+
+```text
+Overall objective
+  Unit 1 -> independently reviewable result
+  Unit 2 -> independently reviewable result
+  Unit 3 -> independently reviewable result
+```
+
+Do not preload the delegated agent with the detailed instructions for every
+unit. Send only what is needed for the current unit:
+
+- the overall objective only when it helps explain why the current unit exists;
+- cross-unit invariants that constrain the current unit;
+- the current unit's objective or question;
+- the current unit's scope;
+- the settled strategy, when delegating implementation;
+- relevant validated evidence;
+- current constraints;
+- the current unit's completion criteria or required conclusion.
+
+After the unit completes, review its result yourself. Use only the validated
+result as input when constructing the next unit. A completed unit may confirm,
+change, merge, split, or eliminate later planned units.
+
+This makes unit boundaries a context reset mechanism: the orchestrator retains
+task continuity while each delegated agent receives only the working context it
+needs now.
 
 ## Explorer
 
@@ -113,6 +233,10 @@ Use the explorer when:
 - unfamiliar code or architecture requires investigation;
 - security, compatibility, data-integrity, or operational assumptions need
   evidence.
+
+A large investigation is not automatically one explorer unit. If it contains
+independent questions across unrelated code paths, systems, or specifications,
+use "Unit sizing" and investigate them in ordered focused units.
 
 A large implementation whose strategy is already settled goes straight to the
 fixer.
@@ -208,6 +332,9 @@ when:
 - multiple files or components must change;
 - independent implementation reduces implementation or review risk.
 
+Before delegating a large settled implementation, apply "Unit sizing". A settled
+strategy does not mean the entire implementation must be one fixer unit.
+
 Send unresolved questions to the explorer first.
 
 ### Handoff
@@ -222,6 +349,10 @@ Give the fixer:
 - the chosen strategy;
 - completion criteria;
 - relevant validated evidence.
+
+For a multi-unit implementation, include only cross-unit invariants and overall
+context that can affect the current unit. Do not preload detailed instructions
+for later units.
 
 Let the fixer make local implementation decisions inside those boundaries.
 
@@ -316,10 +447,17 @@ evidence, a review correction, a test failure caused by the current
 implementation, and completion of an unfinished part all belong to it. Repeated
 corrections stay in the same unit.
 
+A new unit is also the normal context-reset boundary for substantial work. When
+the next unit begins, do not retain a long prior session merely because the same
+role will handle it. Restart so the new unit begins with the standalone handoff
+constructed from settled state, unless the next work is genuinely still the
+same unit.
+
 Restart the agent when the next prompt opens a different unit — a materially
-different problem, a strategy that has been abandoned, or work that prior
-context would bias. Do not use `/new`: a new Pi session may fall back to its
-default model instead of preserving the role's configured model.
+different problem, another independently reviewable slice of a larger plan, a
+strategy that has been abandoned, or work that prior context would bias. Do not
+use `/new`: a new Pi session may fall back to its default model instead of
+preserving the role's configured model.
 
 Before stopping the agent, record its pane and the role's settled model and
 thinking level. Then:
