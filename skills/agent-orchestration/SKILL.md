@@ -1,8 +1,8 @@
 ---
 name: agent-orchestration
 description: >-
-  Delegates non-trivial engineering work to Pi `explorer` (investigation,
-  research) and Pi `fixer` (implementation) in a Herdr session, while the
+  Delegates non-trivial engineering work to an `explorer` (investigation,
+  research) and a `fixer` (implementation) in a Herdr session, while the
   current top-level agent keeps strategy and review. Use when a root cause is
   unclear, code or architecture is unfamiliar, an external API, SDK, or
   specification needs research, or an implementation spans several files —
@@ -33,11 +33,11 @@ Use the `herdr` skill as the authority for pane and agent CLI syntax.
 
 ## Roles
 
-| Role                             | Agent                            |
-| -------------------------------- | -------------------------------- |
-| Orchestration, decisions, review | Orchestrator (the current agent) |
-| Investigation and research       | Pi `explorer`                    |
-| Implementation                   | Pi `fixer`                       |
+| Role                             | Agent                                  |
+| -------------------------------- | -------------------------------------- |
+| Orchestration, decisions, review | Orchestrator (the current agent)       |
+| Investigation and research       | `explorer` (session-configured harness) |
+| Implementation                   | `fixer` (session-configured harness)    |
 
 The explorer is read-only and the fixer may intentionally modify project files
 within delegated implementation work. Neither agent can read this skill or your
@@ -51,16 +51,21 @@ Delegation requires a Herdr-managed pane:
 test "${HERDR_ENV:-}" = 1
 ```
 
-If that fails, do the task yourself. Do not run Pi in the orchestrator pane as a
-substitute.
+If that fails, do the task yourself. Do not run a delegated agent in the
+orchestrator pane as a substitute.
 
 All delegated agents must run in the orchestrator's current tab. Treat
 `$HERDR_TAB_ID` as a hard placement and reuse boundary.
 
+Before the first delegation of a session, ask the user to select the harness,
+model, and effort for both the explorer and the fixer as described in
+[`STARTUP.md`](STARTUP.md). Once settled, keep each role's configuration for the
+rest of that orchestrator session unless the user explicitly changes it.
+
 Read [`STARTUP.md`](STARTUP.md) before the first delegation of a session, and
-whenever a role's agent is missing, lives in another tab, has the wrong model or
-thinking level, or needs a pane created. It holds the agent resolution steps, the
-per-role model configuration and start commands, and the pane layout.
+whenever a role's agent is missing, lives in another tab, has the wrong harness,
+model, or effort, or needs a pane created. It holds the agent resolution steps,
+the per-role configuration and start commands, and the pane layout.
 
 ## Workflow
 
@@ -456,25 +461,22 @@ same unit.
 Restart the agent when the next prompt opens a different unit — a materially
 different problem, another independently reviewable slice of a larger plan, a
 strategy that has been abandoned, or work that prior context would bias. Do not
-use `/new`: a new Pi session may fall back to its default model instead of
-preserving the role's configured model.
+use a harness-native new-session command when it could fall back to that
+harness's default model or effort instead of preserving the role's settled
+configuration.
 
-Before stopping the agent, record its pane and the role's settled model and
-thinking level. Then:
+Before stopping the agent, record its pane and the role's settled harness,
+model, and effort. Stop it using the selected harness's normal exit mechanism;
+do not assume one harness's exit command is valid for another.
 
-```bash
-herdr agent get <name>
-herdr agent prompt <name> '/quit'
-```
-
-Omit `--wait` for `/quit`, since the agent exits rather than settling into a
-state to wait for. Wait until it disappears from `herdr agent list`, confirm its
-pane has returned to an available interactive shell, then restart the same role
-in that pane using the start command in [`STARTUP.md`](STARTUP.md). Explicitly
-pass the role's settled `--model` and `--thinking`; never rely on Pi's defaults.
+Wait until it disappears from `herdr agent list`, confirm its pane has returned
+to an available interactive shell, then restart the same role in that pane using
+the start command in [`STARTUP.md`](STARTUP.md). Explicitly pass the role's
+settled model and effort using the selected harness's arguments; never rely on
+the harness's defaults.
 
 After restart, verify with `herdr agent get <name>` that the agent is in the
-current tab and that its model and thinking level match the settled role
+current tab and that its harness, model, and effort match the settled role
 configuration before sending the first prompt of the new unit.
 
 ### Reading results

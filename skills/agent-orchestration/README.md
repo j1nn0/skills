@@ -5,13 +5,16 @@ A reusable skill for coordinating non-trivial software engineering work through 
 | Role | Agent |
 | --- | --- |
 | Orchestration, decisions, review | Orchestrator (the current agent) |
-| Investigation and research | Pi `explorer` |
-| Implementation | Pi `fixer` |
+| Investigation and research | Session-configured `explorer` |
+| Implementation | Session-configured `fixer` |
 
 The orchestrator owns strategy, review, and completion. `explorer` is read-only by role; `fixer` owns
-project file changes. Both delegated agents use their normal installed Pi extensions, skills, and tools,
-with only the role-specific model and thinking level set — see `STARTUP.md` for the defaults and how
-to substitute a model that an install does not have.
+project file changes.
+
+Before the first delegation of an orchestrator session, the user selects the harness, model, and effort
+independently for `explorer` and `fixer`. Those choices remain in effect for that role for the rest of
+the session unless the user explicitly changes them. Delegated agents otherwise use their selected
+harness's normal installed extensions, skills, and tools. See `STARTUP.md` for configuration and startup.
 
 Work is routed, not piped:
 
@@ -31,5 +34,5 @@ existing `herdr` skill.
 | File | Contents |
 | --- | --- |
 | `SKILL.md` | Roles, workflow, routing, per-role boundaries and handoff formats, review and retry. |
-| `STARTUP.md` | Pane layout, agent resolution and reuse rules, per-role model configuration and start commands. |
+| `STARTUP.md` | Pane layout, agent resolution and reuse rules, per-role harness/model/effort configuration and start commands. |
 | `RECOVERY.md` | Submission failures, timeout, `blocked`, and stuck-agent handling. |
