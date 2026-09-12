@@ -33,9 +33,9 @@ Use the `herdr` skill as the authority for pane and agent CLI syntax.
 
 ## Roles
 
-| Role                             | Agent                                  |
-| -------------------------------- | -------------------------------------- |
-| Orchestration, decisions, review | Orchestrator (the current agent)       |
+| Role                             | Agent                                   |
+| -------------------------------- | --------------------------------------- |
+| Orchestration, decisions, review | Orchestrator (the current agent)        |
 | Investigation and research       | `explorer` (session-configured harness) |
 | Implementation                   | `fixer` (session-configured harness)    |
 
@@ -57,15 +57,28 @@ orchestrator pane as a substitute.
 All delegated agents must run in the orchestrator's current tab. Treat
 `$HERDR_TAB_ID` as a hard placement and reuse boundary.
 
-Before the first delegation of a session, ask the user to select the harness,
-model, and effort for both the explorer and the fixer as described in
-[`STARTUP.md`](STARTUP.md). Once settled, keep each role's configuration for the
-rest of that orchestrator session unless the user explicitly changes it.
+The role configuration is scoped to the current top-level orchestrator
+conversation, not to one invocation of this skill, one user request, one task,
+or one delegation.
 
-Read [`STARTUP.md`](STARTUP.md) before the first delegation of a session, and
-whenever a role's agent is missing, lives in another tab, has the wrong harness,
-model, or effort, or needs a pane created. It holds the agent resolution steps,
-the per-role configuration and start commands, and the pane layout.
+Before asking the user for configuration, first check whether the harness,
+model, and effort for both roles were already settled earlier in the current
+conversation. If they were, reuse them without asking again.
+
+Invoking `agent-orchestration` again, receiving a new user request, completing a
+task, starting a new task, or starting a new delegation unit does not begin a
+new orchestrator session.
+
+Only when no complete role configuration has yet been settled in the current
+conversation, ask the user to select the harness, model, and effort for both the
+explorer and the fixer as described in [`STARTUP.md`](STARTUP.md). Once settled,
+keep each role's configuration until the user explicitly changes it.
+
+Read [`STARTUP.md`](STARTUP.md) before the first delegation of the current
+top-level orchestrator conversation, and whenever a role's agent is missing,
+lives in another tab, has the wrong harness, model, or effort, or needs a pane
+created. It holds the agent resolution steps, the per-role configuration and
+start commands, and the pane layout.
 
 ## Workflow
 

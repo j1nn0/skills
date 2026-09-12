@@ -1,8 +1,9 @@
 # Startup
 
 Agent and pane resolution for `agent-orchestration`. Read this before the first
-delegation of a session, and whenever a role's agent is missing, lives in another
-tab, has the wrong harness, model, or effort, or needs a pane created.
+delegation of the current top-level orchestrator conversation, and whenever a
+role's agent is missing, lives in another tab, has the wrong harness, model, or
+effort, or needs a pane created.
 
 ## Pane layout
 
@@ -33,9 +34,9 @@ Preserve existing user-owned panes when applying this layout.
 
 ## Resolution
 
-Before using any delegated role, first settle the configuration under
-"Role configuration" if it has not already been settled for the current
-orchestrator session.
+Before using any delegated role, first check whether the configuration under
+"Role configuration" was already settled earlier in the current top-level
+orchestrator conversation. If it was, reuse it exactly and do not ask again.
 
 Before using a delegated role:
 
@@ -44,7 +45,7 @@ Before using a delegated role:
    - its `tab_id` equals `$HERDR_TAB_ID`;
    - its kind matches the harness settled for that role;
    - its model and effort match the configuration settled for that role in this
-     session.
+     conversation.
 3. Never reuse, stop, replace, or repurpose an agent from another tab.
 4. If the preferred name belongs to an agent in another tab, choose a unique name
    for the same-tab agent and use that resolved name thereafter.
@@ -120,11 +121,38 @@ enough to be safe; otherwise escalate under "Escalation" in `SKILL.md`.
 
 ## Role configuration
 
-Before the first delegation of an orchestrator session, ask the user to select
-the harness, model, and effort independently for both roles:
+The role configuration is scoped to the current top-level orchestrator
+conversation, not to one invocation of this skill, one user request, one task,
+or one delegation.
 
-| Role     | Harness | Model | Effort |
-| -------- | ------- | ----- | ------ |
+**Invoking `agent-orchestration` again does not start a new orchestration
+session.**
+
+Before asking the user for configuration, first determine whether the current
+orchestrator conversation already has a settled configuration for both roles.
+
+If the harness, model, and effort for both Explorer and Fixer were already
+settled earlier in the current conversation:
+
+- reuse those values exactly;
+- do not ask the user again;
+- do not treat a new user message or another explicit request to use
+  `agent-orchestration` as a new session;
+- do not reopen configuration because the previous task completed;
+- do not reopen configuration because a new unit or task begins.
+
+Ask for configuration only when:
+
+- no role configuration has yet been settled in the current orchestrator
+  conversation;
+- one of the two roles is still missing a required value; or
+- the user explicitly asks to change the configuration.
+
+When configuration is required, ask the user to select the harness, model, and
+effort independently for both roles:
+
+| Role     | Harness       | Model         | Effort        |
+| -------- | ------------- | ------------- | ------------- |
 | Explorer | user-selected | user-selected | user-selected |
 | Fixer    | user-selected | user-selected | user-selected |
 
@@ -154,8 +182,10 @@ Fixer
 Do not choose a harness, model, or effort on the user's behalf.
 
 Once the user has selected them, treat those values as that role's configuration
-for the rest of the current orchestrator session. New units, agent restarts,
-retries, and pane recreation reuse the same configuration without asking again.
+for the rest of the current top-level orchestrator conversation. New user
+requests, repeated invocations of this skill, new tasks, new units, agent
+restarts, retries, and pane recreation reuse the same configuration without
+asking again.
 
 Only change a settled role configuration when the user explicitly instructs you
 to do so. A missing model, provider error, quota error, startup failure, or other
