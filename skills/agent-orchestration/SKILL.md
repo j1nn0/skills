@@ -57,28 +57,31 @@ orchestrator pane as a substitute.
 All delegated agents must run in the orchestrator's current tab. Treat
 `$HERDR_TAB_ID` as a hard placement and reuse boundary.
 
-The role configuration is scoped to the current top-level orchestrator
-conversation, not to one invocation of this skill, one user request, one task,
-or one delegation.
+The role configuration is scoped to the current top-level orchestrator's native
+Herdr agent session, not to one invocation of this skill, one user request, one
+task, or one delegation.
 
-Before asking the user for configuration, first check whether the harness,
-model, and effort for both roles were already settled earlier in the current
-conversation. If they were, reuse them without asking again.
+Before asking the user for configuration, resolve the current orchestrator
+session identity and load its persisted role configuration as described in
+[`STARTUP.md`](STARTUP.md). A complete matching persisted configuration is
+authoritative: reuse it without asking again, even when the current context no
+longer contains the earlier configuration exchange.
 
 Invoking `agent-orchestration` again, receiving a new user request, completing a
-task, starting a new task, or starting a new delegation unit does not begin a
-new orchestrator session.
+task, starting a new task, starting a new delegation unit, or compacting context
+does not begin a new orchestrator session.
 
-Only when no complete role configuration has yet been settled in the current
-conversation, ask the user to select the harness, model, and effort for both the
-explorer and the fixer as described in [`STARTUP.md`](STARTUP.md). Once settled,
-keep each role's configuration until the user explicitly changes it.
+Only when no complete matching persisted configuration exists, and no complete
+configuration is already unambiguously available in the current conversation,
+ask the user to select the harness, model, and effort for both roles. Persist
+the settled values immediately.
 
-Read [`STARTUP.md`](STARTUP.md) before the first delegation of the current
-top-level orchestrator conversation, and whenever a role's agent is missing,
-lives in another tab, has the wrong harness, model, or effort, or needs a pane
-created. It holds the agent resolution steps, the per-role configuration and
-start commands, and the pane layout.
+Read [`STARTUP.md`](STARTUP.md) before the first delegation of every invocation
+of this skill so the persisted configuration is loaded before deciding whether
+to ask the user. Also read it whenever a role's agent is missing, lives in
+another tab, has the wrong harness, model, or effort, or needs a pane created.
+It holds the session-state procedure, agent resolution steps, per-role
+configuration and start commands, and pane layout.
 
 ## Workflow
 
@@ -598,6 +601,8 @@ unnecessary access to secrets without explicit permission.
 
 On normal completion:
 
+- leave the persisted role configuration intact for the lifetime of the current
+  orchestrator native session;
 - leave correctly configured delegated agents running for reuse;
 - leave panes intact, including user-owned panes.
 

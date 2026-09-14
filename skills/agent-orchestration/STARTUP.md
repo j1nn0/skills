@@ -1,9 +1,117 @@
 # Startup
 
-Agent and pane resolution for `agent-orchestration`. Read this before the first
-delegation of the current top-level orchestrator conversation, and whenever a
+Session state, agent, and pane resolution for `agent-orchestration`. Read this
+before the first delegation of every invocation of this skill, and whenever a
 role's agent is missing, lives in another tab, has the wrong harness, model, or
 effort, or needs a pane created.
+
+## Session state
+
+The persisted session state is the authority for whether role configuration has
+already been settled. Do not rely only on conversational memory.
+
+At the start of every invocation of this skill, before asking the user about
+harnesses, models, or effort:
+
+1. Run:
+
+   ```bash
+   herdr pane get "$HERDR_PANE_ID"
+   ```
+
+2. Read the returned pane's `agent_session` object. Use these fields as the
+   current top-level orchestrator session identity:
+
+   - `source`
+   - `kind`
+   - `value`
+
+   The `agent` label is diagnostic metadata, not part of the identity.
+
+3. If `agent_session` is absent, do not treat `$HERDR_PANE_ID`,
+   `$HERDR_TAB_ID`, or `$HERDR_WORKSPACE_ID` as a substitute session identity.
+   Reuse a complete role configuration only when it is still unambiguous in the
+   current conversation. Otherwise ask the user. Do not persist new state until
+   Herdr exposes a native `agent_session`.
+
+4. When `agent_session` is present, use:
+
+   ```text
+   ${XDG_STATE_HOME:-$HOME/.local/state}/agent-orchestration/
+   ```
+
+   as the state directory.
+
+   Build a deterministic file key from the exact `source`, `kind`, and `value`.
+   A portable option on macOS and Linux is the first two fields emitted by
+   POSIX `cksum` for these three values joined with newlines:
+
+   ```bash
+   printf '%s\n%s\n%s\n' '<source>' '<kind>' '<value>' |
+     cksum |
+     awk '{print $1 "-" $2}'
+   ```
+
+   Use the resulting key as:
+
+   ```text
+   <state-dir>/session-<key>.json
+   ```
+
+   `cksum` is only a filename key. Never trust the key alone.
+
+5. If the state file exists, read it and verify that
+   `orchestrator_session.source`, `orchestrator_session.kind`, and
+   `orchestrator_session.value` exactly equal the current `agent_session`.
+   This exact comparison is mandatory because the filename key is not the
+   identity itself.
+
+6. A state file is usable only when both roles contain non-empty `harness`,
+   `model`, and `effort` values. When it is valid, load those values and do not
+   ask the user again.
+
+7. If no valid matching state exists but a complete configuration is already
+   unambiguously available in the current conversation, persist that
+   configuration immediately and continue without asking again. This handles
+   sessions that were configured before persisted state support was added.
+
+8. Otherwise follow "Role configuration", ask once, and persist the answer
+   immediately.
+
+Persist this shape:
+
+```json
+{
+  "schema_version": 1,
+  "orchestrator_session": {
+    "source": "<agent_session.source>",
+    "kind": "<agent_session.kind>",
+    "value": "<agent_session.value>"
+  },
+  "explorer": {
+    "harness": "<selected harness>",
+    "model": "<selected model>",
+    "effort": "<selected effort>"
+  },
+  "fixer": {
+    "harness": "<selected harness>",
+    "model": "<selected model>",
+    "effort": "<selected effort>"
+  }
+}
+```
+
+Create the state directory with user-only permissions where practical and write
+the JSON atomically, for example through a temporary file followed by `mv`.
+Never store provider credentials, tokens, secrets, prompts, investigation
+results, or implementation details in this state.
+
+When the user explicitly changes a role's harness, model, or effort, update the
+same state file immediately. Leave the other role unchanged.
+
+Do not delete the state file when a task or unit completes. A new native
+orchestrator conversation receives a different `agent_session` identity and
+therefore a different state key.
 
 ## Pane layout
 
@@ -34,9 +142,9 @@ Preserve existing user-owned panes when applying this layout.
 
 ## Resolution
 
-Before using any delegated role, first check whether the configuration under
-"Role configuration" was already settled earlier in the current top-level
-orchestrator conversation. If it was, reuse it exactly and do not ask again.
+Before using any delegated role, first run "Session state". If it loads a valid
+matching persisted configuration, use that configuration exactly and do not ask
+the user again.
 
 Before using a delegated role:
 
@@ -121,32 +229,25 @@ enough to be safe; otherwise escalate under "Escalation" in `SKILL.md`.
 
 ## Role configuration
 
-The role configuration is scoped to the current top-level orchestrator
-conversation, not to one invocation of this skill, one user request, one task,
-or one delegation.
+The role configuration is scoped to the current top-level orchestrator's native
+Herdr `agent_session`.
 
 **Invoking `agent-orchestration` again does not start a new orchestration
-session.**
+session and does not reset role configuration.**
 
-Before asking the user for configuration, first determine whether the current
-orchestrator conversation already has a settled configuration for both roles.
+Always run "Session state" before deciding whether configuration is required.
 
-If the harness, model, and effort for both Explorer and Fixer were already
-settled earlier in the current conversation:
+Ask the user for configuration only when:
 
-- reuse those values exactly;
-- do not ask the user again;
-- do not treat a new user message or another explicit request to use
-  `agent-orchestration` as a new session;
-- do not reopen configuration because the previous task completed;
-- do not reopen configuration because a new unit or task begins.
-
-Ask for configuration only when:
-
-- no role configuration has yet been settled in the current orchestrator
-  conversation;
-- one of the two roles is still missing a required value; or
+- there is no valid persisted configuration matching the current
+  `agent_session`;
+- no complete configuration is already unambiguously available in the current
+  conversation; or
 - the user explicitly asks to change the configuration.
+
+A new user message, another explicit request to use `agent-orchestration`, task
+completion, a new task, a new unit, an agent restart, pane recreation, or
+context compaction is not a reason to ask again.
 
 When configuration is required, ask the user to select the harness, model, and
 effort independently for both roles:
@@ -181,11 +282,11 @@ Fixer
 
 Do not choose a harness, model, or effort on the user's behalf.
 
-Once the user has selected them, treat those values as that role's configuration
-for the rest of the current top-level orchestrator conversation. New user
-requests, repeated invocations of this skill, new tasks, new units, agent
-restarts, retries, and pane recreation reuse the same configuration without
-asking again.
+Once the user has selected them, persist the values immediately using "Session
+state". New user requests, repeated invocations of this skill, new tasks, new
+units, agent restarts, retries, pane recreation, and context compaction reload
+the same configuration without asking again while the native `agent_session`
+identity remains the same.
 
 Only change a settled role configuration when the user explicitly instructs you
 to do so. A missing model, provider error, quota error, startup failure, or other

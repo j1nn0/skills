@@ -2,21 +2,23 @@
 
 A reusable skill for coordinating non-trivial software engineering work through Herdr.
 
-| Role                             | Agent                            |
-| -------------------------------- | -------------------------------- |
+| Role | Agent |
+| --- | --- |
 | Orchestration, decisions, review | Orchestrator (the current agent) |
-| Investigation and research       | Session-configured `explorer`    |
-| Implementation                   | Session-configured `fixer`       |
+| Investigation and research | Session-configured `explorer` |
+| Implementation | Session-configured `fixer` |
 
 The orchestrator owns strategy, review, and completion. `explorer` is read-only by role; `fixer` owns
 project file changes.
 
-Before the first delegation of the current top-level orchestrator conversation, the user selects the
-harness, model, and effort independently for `explorer` and `fixer`. Those choices remain in effect
-for the rest of that conversation unless the user explicitly changes them. Invoking
-`agent-orchestration` again, sending another request, completing a task, or starting a new task does
-not reset the configuration. Delegated agents otherwise use their selected harness's normal installed
-extensions, skills, and tools. See `STARTUP.md` for configuration and startup.
+Before the first delegation of a native orchestrator session, the user selects the harness, model, and
+effort independently for `explorer` and `fixer`. The selection is persisted under the user's XDG
+state directory and keyed by Herdr's native `agent_session` identity. Reinvoking
+`agent-orchestration`, sending another request, completing or starting a task, changing units, or
+compacting context reloads the same configuration instead of asking again. Only an explicit user
+change or a different native orchestrator session changes that behavior. Delegated agents otherwise
+use their selected harness's normal installed extensions, skills, and tools. See `STARTUP.md` for
+session state, configuration, and startup.
 
 Work is routed, not piped:
 
@@ -33,8 +35,8 @@ existing `herdr` skill.
 
 ## Files
 
-| File          | Contents                                                                                                       |
-| ------------- | -------------------------------------------------------------------------------------------------------------- |
-| `SKILL.md`    | Roles, workflow, routing, per-role boundaries and handoff formats, review and retry.                           |
-| `STARTUP.md`  | Pane layout, agent resolution and reuse rules, per-role harness/model/effort configuration and start commands. |
-| `RECOVERY.md` | Submission failures, timeout, `blocked`, and stuck-agent handling.                                             |
+| File | Contents |
+| --- | --- |
+| `SKILL.md` | Roles, workflow, routing, per-role boundaries and handoff formats, review and retry. |
+| `STARTUP.md` | Persisted session state, pane layout, agent resolution and reuse rules, per-role harness/model/effort configuration and start commands. |
+| `RECOVERY.md` | Submission failures, timeout, `blocked`, and stuck-agent handling. |
