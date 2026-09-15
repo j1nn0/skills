@@ -20,6 +20,16 @@ change or a different native orchestrator session changes that behavior. Delegat
 use their selected harness's normal installed extensions, skills, and tools. See `STARTUP.md` for
 session state, configuration, and startup.
 
+The skill also records an optional orchestration grouping identity, scoped to one coherent top-level
+engineering objective rather than to the native session. It spans the `explorer` and `fixer` work,
+every bounded unit, review and fix retries, interruption and resume, and context compaction, and it
+is cleared when the objective completes. It is independent of the role configuration and never
+causes the harness, model, or effort question to be asked again.
+
+The grouping is delivered by an optional Harvest Herdr plugin and is detected by capability
+negotiation rather than by a version number. When Harvest is absent, disabled, incompatible, or
+failing, the skill delegates exactly as it otherwise would. See `STARTUP.md` for the detail.
+
 Work is routed, not piped:
 
 ```text
@@ -38,5 +48,5 @@ existing `herdr` skill.
 | File | Contents |
 | --- | --- |
 | `SKILL.md` | Roles, workflow, routing, per-role boundaries and handoff formats, review and retry. |
-| `STARTUP.md` | Persisted session state, pane layout, agent resolution and reuse rules, per-role harness/model/effort configuration and start commands. |
+| `STARTUP.md` | Persisted session state, the active orchestration identity, pane layout, agent resolution and reuse rules, per-role harness/model/effort configuration and start commands, and the optional Harvest capture integration. |
 | `RECOVERY.md` | Submission failures, timeout, `blocked`, and stuck-agent handling. |

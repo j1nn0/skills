@@ -1,9 +1,10 @@
 # Startup
 
-Session state, agent, and pane resolution for `agent-orchestration`. Read this
-before the first delegation of every invocation of this skill, and whenever a
-role's agent is missing, lives in another tab, has the wrong harness, model, or
-effort, or needs a pane created.
+Session state, the active orchestration identity, agent, and pane resolution
+for `agent-orchestration`, plus the optional Harvest orchestration capture
+integration. Read this before the first delegation of every invocation of this
+skill, and whenever a role's agent is missing, lives in another tab, has the
+wrong harness, model, or effort, or needs a pane created.
 
 ## Session state
 
@@ -82,7 +83,7 @@ Persist this shape:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "orchestrator_session": {
     "source": "<agent_session.source>",
     "kind": "<agent_session.kind>",
@@ -97,14 +98,21 @@ Persist this shape:
     "harness": "<selected harness>",
     "model": "<selected model>",
     "effort": "<selected effort>"
-  }
+  },
+  "active_orchestration": null
 }
 ```
+
+`active_orchestration` is either `null` or an object, and that object is
+described under "Active orchestration".
 
 Create the state directory with user-only permissions where practical and write
 the JSON atomically, for example through a temporary file followed by `mv`.
 Never store provider credentials, tokens, secrets, prompts, investigation
-results, or implementation details in this state.
+results, or implementation details in this state. Never store any Harvest
+runtime value either: plugin root, plugin config directory, Harvest state
+directory, socket path, capability output, agent reports, findings, or Result
+text. Rediscover each of those every time it is needed.
 
 When the user explicitly changes a role's harness, model, or effort, update the
 same state file immediately. Leave the other role unchanged.
@@ -112,6 +120,111 @@ same state file immediately. Leave the other role unchanged.
 Do not delete the state file when a task or unit completes. A new native
 orchestrator conversation receives a different `agent_session` identity and
 therefore a different state key.
+
+### Schema version 1 compatibility
+
+A state file written with `"schema_version": 1` has no `active_orchestration`
+field and is still a fully valid role configuration. Never ask the user for
+harness, model, or effort again merely because the file is version 1 or has no
+orchestration field.
+
+Upgrade it the next time the file has to be written for any reason: set
+`"schema_version"` to `2`, add `"active_orchestration": null`, and leave the
+`orchestrator_session`, `explorer`, and `fixer` objects byte-for-byte
+equivalent. The upgrade is one atomic write, not a separate migration pass,
+and it happens before an objective is recorded.
+
+If `active_orchestration` alone is present but malformed — not an object and
+not `null`, or missing a conforming `id`, `label`, `status`, or `created_at` —
+discard and replace only that field with `null`. Never invalidate an
+otherwise-valid role configuration because of it.
+
+## Active orchestration
+
+The `active_orchestration` field holds the identity of the current
+orchestration objective:
+
+```json
+"active_orchestration": {
+  "id": "<canonical lowercase UUIDv4>",
+  "label": "<stable one-line objective label>",
+  "status": "active",
+  "created_at": "<ISO-8601 timestamp>"
+}
+```
+
+Allowed `status` values are exactly `active` and `interrupted`. No other value
+is valid.
+
+### Scope and lifetime
+
+One `active_orchestration` represents one coherent top-level engineering
+objective. It survives the move from explorer to fixer, every bounded unit
+within the objective, review and fix retries, delegated-agent restarts, pane
+recreation, context compaction, and interruption followed by resume. It is not
+per skill invocation, not per user message, not per unit, and not per delegated
+agent.
+
+Do not create one merely because the skill was invoked, a user sent a message,
+context was compacted, a role pane was created, or a role agent restarted.
+Create it immediately before the first actual delegated prompt of one coherent
+top-level objective, and only after Harvest capability negotiation under
+"Harvest orchestration capture" succeeds. Persist it atomically before that
+prompt is sent.
+
+### Reuse
+
+Before creating one, decide whether a valid existing `active_orchestration`
+already represents the current objective. Reuse it when the current work is
+clearly a continuation — for example continuing the same unfinished task,
+resuming after an interruption, continuing after context compaction, moving
+from explorer to fixer for the same objective, starting another bounded unit of
+the same objective, or a review/fix retry for the same objective.
+
+If the current user request is clearly an independent objective, do not reuse
+the old id. If identity is genuinely ambiguous, prefer a new identity, or no
+Harvest integration at all. Under-grouping is safer than false grouping, and
+two unrelated objectives must never be merged merely to maximize grouping.
+
+### Generating the identity
+
+Generate the UUID with Node's built-in `randomUUID()`; no dependency is
+required:
+
+```bash
+node -e 'console.log(require("node:crypto").randomUUID())'
+```
+
+The canonical lowercase form it returns is what Harvest requires. Never
+hand-edit or re-case the id.
+
+The label must be a concise single line describing the top-level engineering
+objective. It must be non-blank, at most 256 Unicode code points, free of
+credentials and secrets, and identical for the whole lifetime of the id. The
+plan or wording evolving later is not a reason to rename it: Harvest treats a
+different label or role snapshot for the same id as a conflict.
+
+### Interruption and resume
+
+When the orchestrator gets an explicit opportunity to record a pause, set
+`status` to `interrupted` and keep the id and label. If the process or the user
+interrupts abruptly before that update lands, leaving `status` as `active` is
+acceptable. The invariant to protect is: never clear `active_orchestration`
+merely because work stopped temporarily.
+
+When the same objective resumes, reuse the same id and label and set `status`
+back to `active`.
+
+### Completion
+
+Set `active_orchestration` to `null` only after the orchestrator itself has
+confirmed the top-level objective's completion criteria, or the user has
+explicitly abandoned or cancelled the objective. Persist that update
+atomically, before the user-facing final report where practical.
+
+Do not clear it because one explorer or fixer unit finished, and do not clear
+it between explorer and fixer. Do not accumulate completed-orchestration
+history in this file; Harvest Results already snapshot completed identity.
 
 ## Pane layout
 
@@ -232,6 +345,11 @@ enough to be safe; otherwise escalate under "Escalation" in `SKILL.md`.
 The role configuration is scoped to the current top-level orchestrator's native
 Herdr `agent_session`.
 
+Orchestration identity is independent of role configuration. Creating, reusing,
+interrupting, resuming, or clearing an `active_orchestration`, and any Harvest
+availability or failure, are never reasons to ask for harness, model, or effort
+again or to change a settled value.
+
 **Invoking `agent-orchestration` again does not start a new orchestration
 session and does not reset role configuration.**
 
@@ -325,3 +443,187 @@ Use `fixer` as `<fixer-name>` when available.
 Both delegated agents intentionally use the selected harness's normal installed
 extensions, skills, and tools. Only the role-specific model and effort are set
 explicitly here.
+
+## Harvest orchestration capture
+
+Harvest orchestration capture is optional. Harvest grouping is enrichment,
+never a prerequisite for engineering orchestration, and the skill must behave
+normally when Harvest is not installed, is disabled, is too old, fails
+capability negotiation, has a missing or stale runtime locator, or when a
+claim fails. Never ask the user to install Harvest merely because this
+integration is unavailable, and never change role configuration because of it.
+
+### Discovery
+
+Use only supported public surfaces. First:
+
+```bash
+herdr plugin list --plugin j1nn0.herdr-harvest --json
+```
+
+The plugin objects are under `.result.plugins`. Require an exact installed
+plugin:
+
+```text
+plugin_id == j1nn0.herdr-harvest
+enabled == true
+plugin_root is non-empty
+```
+
+Take `plugin_root` from that output and use it for every later command. Do not
+hard-code a managed checkout path and do not infer a plugin directory from XDG
+paths. The reported `version` field is diagnostic only.
+
+Never gate the integration on a Harvest version number. Do not write or rely on
+a rule of the form "Harvest >= 0.x.y is sufficient". Capability negotiation is
+the only authority.
+
+### Capability negotiation
+
+```bash
+node "<plugin_root>/src/bin/capture.ts" --capabilities
+```
+
+It prints one JSON line and touches neither the environment, the database, nor
+Herdr:
+
+```json
+{"protocol":"harvest-capture","protocolVersion":1,"features":["orchestration-claim","runtime-locator"],"roles":["explorer","fixer"]}
+```
+
+Require all of:
+
+```text
+protocol == harvest-capture
+protocolVersion == 1
+features contains orchestration-claim
+features contains runtime-locator
+roles contains the role being claimed
+```
+
+`protocolVersion` must equal `1`. A higher, unknown protocol version is not
+compatible merely because it is numerically greater. If Node cannot execute the
+entrypoint, or the probe fails or prints anything else, Harvest integration is
+unavailable and ordinary orchestration continues.
+
+### Runtime locator
+
+For an actual claim, resolve the plugin config directory through Herdr rather
+than computing it:
+
+```bash
+herdr plugin config-dir j1nn0.herdr-harvest
+```
+
+It prints one raw path on stdout followed by a newline; it is not JSON. Read:
+
+```text
+<config-dir>/orchestration-capture-runtime.json
+```
+
+Require:
+
+```text
+protocol == harvest-runtime-locator
+protocolVersion == 1
+pluginId == j1nn0.herdr-harvest
+stateDir is a non-empty absolute path
+socketPath is a non-empty string
+socketPath == the current HERDR_SOCKET_PATH
+```
+
+`updatedAtMs` may be read as diagnostic metadata but must never override the
+socket identity check. The socket comparison is what proves the locator
+describes the Herdr server this orchestrator is actually talking to.
+
+If the locator is missing, malformed, or points at another socket, Harvest
+integration is unavailable for this claim. Do not guess another state directory
+and do not reproduce Herdr's internal state-directory calculation. A missing
+locator can simply mean Harvest has not run yet in this Herdr session, so a
+later claim in the same objective may still succeed.
+
+### Claiming a completed delegated result
+
+The only authoritative orchestration association is this explicit claim:
+
+```bash
+env -u HARVEST_STATE_DIR \
+  HERDR_PLUGIN_STATE_DIR="<locator.stateDir>" \
+  node "<plugin_root>/src/bin/capture.ts" \
+    --pane "<delegated-pane-id>" \
+    --orchestration-id "<uuid-v4>" \
+    --orchestration-label "<stable-label>" \
+    --orchestration-role "<explorer|fixer>"
+```
+
+Rules:
+
+- `HARVEST_STATE_DIR` must actually be absent from the child environment.
+  Harvest resolves its state directory as
+  `HARVEST_STATE_DIR ?? HERDR_PLUGIN_STATE_DIR`, so a leftover
+  `HARVEST_STATE_DIR` silently wins and the claim lands in the wrong database.
+  Equivalent environment handling is fine as long as the variable is genuinely
+  unset for the child.
+- The current `HERDR_SOCKET_PATH` must be preserved in the child process;
+  Harvest needs it to reach Herdr and read the pane.
+- `--pane` is the delegated agent's pane id, never the orchestrator's pane.
+- The three orchestration options are all-or-nothing: supplying only some of
+  them is a usage error that captures nothing.
+- `--orchestration-id` must be a canonical lowercase UUIDv4; uppercase or
+  prefixed tokens are rejected.
+- `--orchestration-label` must be 1-256 non-blank Unicode code points and is
+  stored verbatim.
+- `--orchestration-role` is exactly `explorer` or `fixer`, case-sensitive.
+
+**Transport boundaries.** The UUID, label, and role travel only through these
+CLI arguments. Never transport orchestration identity through pane metadata
+tokens, `state_labels`, workspace/tab/pane inference, native session inference,
+environment variables such as `HARVEST_ORCHESTRATION_ID`, prompt embedding,
+terminal-output parsing, or timestamps. There is no metadata token, TTL, or
+sequence number in this design; do not reintroduce one. Never claim the
+long-lived top-level orchestrator pane — only `explorer` and `fixer` are
+Harvest orchestration roles.
+
+### Claim results
+
+The command prints one JSON summary line on stdout. Outcomes:
+
+```text
+exit 0  captured | duplicate | skipped
+exit 1  failed (capture or runtime failure)
+exit 2  invalid arguments
+exit 3  conflict
+```
+
+Top-level `status` is one of `captured`, `duplicate`, `conflict`, `skipped`, or
+`failed`. An `orchestration` object of the form `{"status":"...","id":"..."}`
+appears only with `captured` or `duplicate`, and its `status` is either
+`claimed` or `already_claimed`.
+
+Treat only these as success:
+
+```text
+status == captured  or  status == duplicate
+and orchestration.status == claimed  or  already_claimed
+```
+
+`already_claimed` is successful idempotency, not an error: it means the stored
+row already holds the identical id, label, and role.
+
+A conflict is `exit 3` with `status == conflict`, plus
+`requestedOrchestrationId` and `existingOrchestrationId`; it carries no
+`orchestration` object. Harvest refuses only the attribution — the delegated
+Result itself is still stored. A conflict must never be repaired by changing
+the UUID, changing the label, overwriting the existing claim, or retrying with
+guessed metadata. Record the integration problem and continue the engineering
+workflow.
+
+### Graceful degradation
+
+None of these may fail the delegated engineering task: `skipped`, `failed`,
+malformed JSON, a missing or stale locator, a capability mismatch, a conflict,
+or a process failure. Never discard an otherwise valid explorer or fixer result
+because Harvest failed. If one or more claims failed or conflicted during an
+objective, mention it once in the user-facing final report so the user knows
+the grouping may be incomplete; do not report a Harvest problem after every
+unit.
