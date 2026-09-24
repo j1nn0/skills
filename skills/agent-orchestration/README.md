@@ -18,7 +18,7 @@ state directory and keyed by Herdr's native `agent_session` identity. Reinvoking
 compacting context reloads the same configuration instead of asking again. Only an explicit user
 change or a different native orchestrator session changes that behavior. Delegated agents otherwise
 use their selected harness's normal installed extensions, skills, and tools. See `STARTUP.md` for
-session state, configuration, and startup.
+session state, configuration, pane layout, and agent startup.
 
 The skill also records an optional orchestration grouping identity, scoped to one coherent top-level
 engineering objective rather than to the native session. It spans the `explorer` and `fixer` work,
@@ -28,7 +28,8 @@ causes the harness, model, or effort question to be asked again.
 
 The grouping is delivered by an optional Harvest Herdr plugin and is detected by capability
 negotiation rather than by a version number. When Harvest is absent, disabled, incompatible, or
-failing, the skill delegates exactly as it otherwise would. See `STARTUP.md` for the detail.
+failing, the skill delegates exactly as it otherwise would. Harvest identity, runtime discovery,
+claim ordering, and graceful degradation live in `HARVEST.md`.
 
 Work is routed, not piped:
 
@@ -47,6 +48,7 @@ existing `herdr` skill.
 
 | File | Contents |
 | --- | --- |
-| `SKILL.md` | Roles, workflow, routing, per-role boundaries and handoff formats, review and retry. |
-| `STARTUP.md` | Persisted session state, the active orchestration identity, pane layout, agent resolution and reuse rules, per-role harness/model/effort configuration and start commands, and the optional Harvest capture integration. |
+| `SKILL.md` | Roles, workflow, routing, unit sizing, per-role boundaries and handoff formats, delegation mechanics, review and retry. |
+| `STARTUP.md` | Persisted session state, pane layout, agent resolution and reuse rules, and per-role harness/model/effort configuration and start commands. |
+| `HARVEST.md` | Optional Harvest orchestration identity, objective lifecycle, capability negotiation, runtime locator validation, claim protocol, and graceful degradation. |
 | `RECOVERY.md` | Submission failures, timeout, `blocked`, and stuck-agent handling. |

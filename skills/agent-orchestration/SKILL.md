@@ -61,12 +61,6 @@ The role configuration is scoped to the current top-level orchestrator's native
 Herdr agent session, not to one invocation of this skill, one user request, one
 task, or one delegation.
 
-A second, different lifetime is recorded in the same persisted session state:
-the orchestration identity, scoped to one coherent top-level engineering
-objective rather than to the session or to one unit. Creating, reusing, or
-clearing that identity never re-asks for or changes the role configuration. See
-[`STARTUP.md`](STARTUP.md) for its state shape and lifecycle.
-
 Before asking the user for configuration, resolve the current orchestrator
 session identity and load its persisted role configuration as described in
 [`STARTUP.md`](STARTUP.md). A complete matching persisted configuration is
@@ -86,72 +80,22 @@ Read [`STARTUP.md`](STARTUP.md) before the first delegation of every invocation
 of this skill so the persisted configuration is loaded before deciding whether
 to ask the user. Also read it whenever a role's agent is missing, lives in
 another tab, has the wrong harness, model, or effort, or needs a pane created.
-It holds the session-state procedure, the active orchestration lifecycle, agent
-resolution steps, per-role configuration and start commands, pane layout, and
-the optional Harvest capture protocol.
+It holds the session-state procedure, agent resolution steps, per-role
+configuration and start commands, and pane layout.
 
-## Orchestration identity
-
-Harvest is optional, and the grouping it provides is enrichment, not a
-prerequisite for delegation. When Harvest is unavailable, disabled,
-incompatible, or a claim fails, delegation proceeds unchanged, nothing is
-faked, and the role configuration is untouched. Never ask the user to install
-Harvest because of this.
-
-Before the first delegated prompt of an objective, either reuse the existing
-identity or create a new one. Reuse it when the current work continues the same
-objective: another bounded unit, a review or fix retry, the move from explorer
-to fixer, a resume after interruption, or work continuing after context
-compaction. Create a new one only when the request is clearly an independent
-objective; when identity is genuinely ambiguous, prefer a new identity or none
-at all, because under-grouping is safer than false grouping. Do not create one
-merely because the skill was invoked, a message arrived, context was compacted,
-a pane was created, or an agent restarted.
-
-The identity is stable for the whole objective: the same id and label cover
-every explorer and fixer unit within it, and the label never changes because
-the plan or wording evolved.
-
-Claim ordering is mandatory. Once a delegated explorer or fixer result has
-settled and been accepted as the answer to the prompt just sent, claim it for
-the current identity and inspect the claim's JSON outcome before sending that
-role another prompt, before reusing its pane or agent for another unit, and
-before moving on to another delegated unit. The orchestrator may review the
-diff and evidence before or after the claim, but must not mutate or reuse the
-delegated agent's turn until the claim has been attempted. Claim every
-completed unit, not just the last one.
-
-The ordering matters because panes and agents are reused across objectives: a
-synchronous claim right after each completed turn is the only thing that keeps
-a reused pane's next Result from being attributed to the previous objective.
-Existing stale-result protections still apply: an old result block is never a
-new completion, and a stale block must never be claimed.
-
-Only `explorer` and `fixer` are Harvest orchestration roles; never claim the
-long-lived top-level orchestrator pane. A failed or conflicting claim never
-fails the engineering work or discards a valid delegated result; mention a
-failed or conflicting claim once in the final report, not after every unit.
-
-Clear the identity only after the orchestrator has confirmed the objective's
-completion criteria, or the user has explicitly abandoned it. Never clear it
-because one unit finished, and never clear it between explorer and fixer.
-
-Do not put the orchestration id, the Harvest paths, the locator, or anything
-about the claim protocol into explorer or fixer handoff prompts; delegated
-agents do not need to know Harvest exists, and the orchestrator owns the
-association externally.
-
-The state shape, discovery, capability negotiation, locator validation, the
-claim command, and the outcome handling all live in [`STARTUP.md`](STARTUP.md).
+Harvest orchestration grouping is optional and independent of role
+configuration. Before the first delegated prompt of every invocation that will
+delegate, read [`HARVEST.md`](HARVEST.md) and follow its identity and capture
+lifecycle for the current objective. Harvest availability, failure, or identity
+changes never cause the harness, model, or effort question to be asked again.
 
 ## Workflow
 
 1. Define the objective, constraints, scope, and completion criteria.
-2. Before the first delegation, settle the orchestration identity for this
-   objective — reuse the existing one, or create one when Harvest is available —
-   and keep it for every later unit of the same objective. After that, claim
-   each accepted delegated result before the agent that produced it is prompted
-   again or reused. See "Orchestration identity".
+2. Before the first delegated prompt of the objective, follow
+   [`HARVEST.md`](HARVEST.md): reuse or create the objective identity when
+   Harvest is available, then claim each accepted delegated result before that
+   agent is prompted again or reused.
 3. Route to investigation, implementation, or direct handling using the
    delegation boundaries below. Handle work yourself when it is trivial, local,
    and low-risk enough that delegation would cost more than it returns.
@@ -541,8 +485,8 @@ role will handle it. Restart so the new unit begins with the standalone handoff
 constructed from settled state, unless the next work is genuinely still the
 same unit.
 
-The accepted result of the current unit must already have been claimed before
-that agent is stopped or reused; "Orchestration identity" holds that rule.
+The accepted result of the current unit must already have been claimed according
+to [`HARVEST.md`](HARVEST.md) before that agent is stopped or reused.
 
 Restart the agent when the next prompt opens a different unit — a materially
 different problem, another independently reviewable slice of a larger plan, a
@@ -671,10 +615,10 @@ unnecessary access to secrets without explicit permission.
 
 On normal completion:
 
-- clear the recorded active orchestration in the persisted session state once
-  you have confirmed the objective's completion criteria — before the final
-  user-facing report where practical — and also when the user explicitly
-  abandons the objective;
+- complete the Harvest objective lifecycle in [`HARVEST.md`](HARVEST.md),
+  clearing the recorded active orchestration once you have confirmed the
+  objective's completion criteria — before the final user-facing report where
+  practical — and also when the user explicitly abandons the objective;
 - leave the persisted role configuration intact for the lifetime of the current
   orchestrator native session;
 - leave correctly configured delegated agents running for reuse;
