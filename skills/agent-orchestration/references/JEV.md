@@ -22,7 +22,7 @@ fixer report -> diff review -> verification -> orchestrator review -> gate -> co
 
 ## Settled input and privacy
 
-`bin/jevctl completion-gate` reads one JSON object from stdin containing `task_summary`, `root_cause_summary`, `implementation_summary`, `changed_files`, `diff_stats`, `verification`, `tests_summary`, `remaining_issues`, `review_findings`, and `deterministic_pass`. It sends only these settled report fields as compact `state`, not extra caller data. The orchestrator sets `deterministic_pass`; Jev is never asked to overrule a failed deterministic check.
+`scripts/jevctl completion-gate` reads one JSON object from stdin containing `task_summary`, `root_cause_summary`, `implementation_summary`, `changed_files`, `diff_stats`, `verification`, `tests_summary`, `remaining_issues`, `review_findings`, and `deterministic_pass`. It sends only these settled report fields as compact `state`, not extra caller data. The orchestrator sets `deterministic_pass`; Jev is never asked to overrule a failed deterministic check.
 
 The state is capped by `JEVCTL_MAX_STATE_CHARS` (default `12000` characters) and truncated with a marker. This deliberately conservative cap leaves room for the questions and reduces the chance of approaching the model budget; character count is not an exact token count. TypeSafe's input-token budgets are 64k for state plus all questions combined, and 32k for state plus the single longest question. Both budgets count encoded input tokens, so keep the full request below both limits.
 
@@ -41,7 +41,7 @@ Noul values are probabilities from `0` to `1` that the corresponding `true` crit
 
 ## Decision and completion policy
 
-Defaults are centralized in `bin/jevctl` and may be overridden by environment variables or the configuration file:
+Defaults are centralized in `scripts/jevctl` and may be overridden by environment variables or the configuration file:
 
 | Setting | Default | Passing condition |
 | --- | ---: | --- |
@@ -97,6 +97,6 @@ Command Code headless exit codes map to reasons as follows:
 
 With `CMD_ZDR=1`, `cmd` preserves the session-wide ZDR opt-in. Jev has no ZDR-capable upstream, so Command Code may refuse the request with HTTP 422 (`cmd_zdr_no_providers`) rather than route it to a retaining provider. Such a refusal remains unavailable; the gate does not disable ZDR or fail over.
 
-`bin/jevctl doctor` is diagnostic only and always prints one JSON object including `enabled`. When enabled on the `cmd` transport it checks for `cmd` and runs the local `cmd --version` smoke probe; probe failures use the same exit-code mapping. It makes no model request and mutates no local state. Both subcommands keep JSON alone on stdout and send only sanitized diagnostics to stderr.
+`scripts/jevctl doctor` is diagnostic only and always prints one JSON object including `enabled`. When enabled on the `cmd` transport it checks for `cmd` and runs the local `cmd --version` smoke probe; probe failures use the same exit-code mapping. It makes no model request and mutates no local state. Both subcommands keep JSON alone on stdout and send only sanitized diagnostics to stderr.
 
 The `provider` transport remains an unimplemented extension point. Explorer, Parallel, and Plan gates are not part of this change and are unspecified.

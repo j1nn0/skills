@@ -63,7 +63,7 @@ task, or one delegation.
 
 Before asking the user for configuration, resolve the current orchestrator
 session identity and load its persisted role configuration as described in
-[`STARTUP.md`](STARTUP.md). A complete matching persisted configuration is
+[`STARTUP.md`](references/STARTUP.md). A complete matching persisted configuration is
 authoritative: reuse it without asking again, even when the current context no
 longer contains the earlier configuration exchange.
 
@@ -76,7 +76,7 @@ configuration is already unambiguously available in the current conversation,
 ask the user to select the harness, model, and effort for both roles. Persist
 the settled values immediately.
 
-Read [`STARTUP.md`](STARTUP.md) before the first delegation of every invocation
+Read [`STARTUP.md`](references/STARTUP.md) before the first delegation of every invocation
 of this skill so the persisted configuration is loaded before deciding whether
 to ask the user. Also read it whenever a role's agent is missing, lives in
 another tab, has the wrong harness, model, or effort, or needs a pane created.
@@ -85,7 +85,7 @@ configuration and start commands, and pane layout.
 
 Harvest orchestration grouping is optional and independent of role
 configuration. Before the first delegated prompt of every invocation that will
-delegate, read [`HARVEST.md`](HARVEST.md) and follow its identity and capture
+delegate, read [`HARVEST.md`](references/HARVEST.md) and follow its identity and capture
 lifecycle for the current objective. Harvest availability, failure, or identity
 changes never cause the harness, model, or effort question to be asked again.
 
@@ -93,7 +93,7 @@ changes never cause the harness, model, or effort question to be asked again.
 
 1. Define the objective, constraints, scope, and completion criteria.
 2. Before the first delegated prompt of the objective, follow
-   [`HARVEST.md`](HARVEST.md): reuse or create the objective identity when
+   [`HARVEST.md`](references/HARVEST.md): reuse or create the objective identity when
    Harvest is available, then claim each accepted delegated result before that
    agent is prompted again or reused.
 3. Route to investigation, implementation, or direct handling using the
@@ -486,7 +486,7 @@ constructed from settled state, unless the next work is genuinely still the
 same unit.
 
 The accepted result of the current unit must already have been claimed according
-to [`HARVEST.md`](HARVEST.md) before that agent is stopped or reused.
+to [`HARVEST.md`](references/HARVEST.md) before that agent is stopped or reused.
 
 Restart the agent when the next prompt opens a different unit — a materially
 different problem, another independently reviewable slice of a larger plan, a
@@ -501,7 +501,7 @@ do not assume one harness's exit command is valid for another.
 
 Wait until it disappears from `herdr agent list`, confirm its pane has returned
 to an available interactive shell, then restart the same role in that pane using
-the start command in [`STARTUP.md`](STARTUP.md). Explicitly pass the role's
+the start command in [`STARTUP.md`](references/STARTUP.md). Explicitly pass the role's
 settled model and effort using the selected harness's arguments; never rely on
 the harness's defaults.
 
@@ -552,7 +552,7 @@ prompt you just sent. Confirm the agent is idle with `herdr agent get` before
 prompting, rather than trying to detect staleness afterwards: once you hold a
 plausible-looking block, nothing in it tells you which prompt produced it.
 
-Read [`RECOVERY.md`](RECOVERY.md) when a prompt is rejected before it reaches the
+Read [`RECOVERY.md`](references/RECOVERY.md) when a prompt is rejected before it reaches the
 agent, times out, settles on `blocked`, or an agent appears stuck. It holds the
 submission failures, the inspection order, when interrupting is justified, and
 the routes out.
@@ -615,7 +615,7 @@ unnecessary access to secrets without explicit permission.
 
 ### Optional Jev completion gate
 
-[`JEV.md`](JEV.md) is authoritative for the optional gate. Run it only after the
+[`JEV.md`](references/JEV.md) is authoritative for the optional gate. Run it only after the
 orchestrator has reviewed the actual diff and project verification has passed;
 Jev cannot override deterministic failures, policy, or this skill's invariants.
 If Jev is unavailable, invalid, uncertain, or disabled, continue the existing
@@ -623,7 +623,7 @@ workflow conservatively; removing it leaves orchestration behavior unchanged.
 
 On normal completion:
 
-- complete the Harvest objective lifecycle in [`HARVEST.md`](HARVEST.md),
+- complete the Harvest objective lifecycle in [`HARVEST.md`](references/HARVEST.md),
   clearing the recorded active orchestration once you have confirmed the
   objective's completion criteria — before the final user-facing report where
   practical — and also when the user explicitly abandons the objective;

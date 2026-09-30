@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).parents[1]
-JEVCTL = ROOT / "skills" / "agent-orchestration" / "bin" / "jevctl"
+JEVCTL = ROOT / "skills" / "agent-orchestration" / "scripts" / "jevctl"
 
 
 class JevctlTest(unittest.TestCase):
@@ -109,7 +109,7 @@ class JevctlTest(unittest.TestCase):
             "task_summary": "Add an optional completion gate.",
             "root_cause_summary": "Not applicable to this feature.",
             "implementation_summary": "Added a bounded decision aid.",
-            "changed_files": ["skills/agent-orchestration/bin/jevctl"],
+            "changed_files": ["skills/agent-orchestration/scripts/jevctl"],
             "diff_stats": {"files": 1, "insertions": 10, "deletions": 0},
             "verification": {"commands": ["python3 -m unittest"], "exit_status": 0},
             "tests_summary": "All relevant tests passed.",
