@@ -563,8 +563,6 @@ def completion_result():
         return unavailable_result("invalid_response", mode)
     except KeyboardInterrupt:
         return unavailable_result("interrupted", mode)
-    except Exception:
-        return unavailable_result("transport_error", mode)
 
     thresholds = settings["thresholds"]
     completion_eligible = (
