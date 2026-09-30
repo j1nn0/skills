@@ -31,6 +31,11 @@ negotiation rather than by a version number. When Harvest is absent, disabled, i
 failing, the skill delegates exactly as it otherwise would. Harvest identity, runtime discovery,
 claim ordering, and graceful degradation live in `HARVEST.md`.
 
+The optional Completion Gate in `JEV.md` uses Jev only after diff review and
+deterministic project verification, to recommend completion or a bounded follow-up
+action. It cannot override deterministic failures, policy, or orchestrator review;
+when disabled or unavailable, the existing workflow remains unchanged.
+
 Work is routed, not piped:
 
 ```text
@@ -49,6 +54,8 @@ existing `herdr` skill.
 | File | Contents |
 | --- | --- |
 | `SKILL.md` | Roles, workflow, routing, unit sizing, per-role boundaries and handoff formats, delegation mechanics, review and retry. |
+| `JEV.md` | Optional Jev Completion Gate policy, input, thresholds, configuration, and failure behavior. |
+| `bin/jevctl` | Stdlib-only CLI for the optional Jev completion gate and diagnostic. |
 | `STARTUP.md` | Persisted session state, pane layout, agent resolution and reuse rules, and per-role harness/model/effort configuration and start commands. |
 | `HARVEST.md` | Optional Harvest orchestration identity, objective lifecycle, capability negotiation, runtime locator validation, claim protocol, and graceful degradation. |
 | `RECOVERY.md` | Submission failures, timeout, `blocked`, and stuck-agent handling. |

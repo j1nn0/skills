@@ -613,6 +613,14 @@ unnecessary access to secrets without explicit permission.
 
 ## Completion lifecycle
 
+### Optional Jev completion gate
+
+[`JEV.md`](JEV.md) is authoritative for the optional gate. Run it only after the
+orchestrator has reviewed the actual diff and project verification has passed;
+Jev cannot override deterministic failures, policy, or this skill's invariants.
+If Jev is unavailable, invalid, uncertain, or disabled, continue the existing
+workflow conservatively; removing it leaves orchestration behavior unchanged.
+
 On normal completion:
 
 - complete the Harvest objective lifecycle in [`HARVEST.md`](HARVEST.md),

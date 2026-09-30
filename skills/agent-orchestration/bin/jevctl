@@ -1,0 +1,572 @@
+#!/usr/bin/env python3
+"""Optional Jev completion gate for the agent-orchestration skill."""
+
+import json
+import math
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+DEFAULT_MODEL = "typesafe/jev"
+DEFAULT_TRANSPORT = "cmd"
+DEFAULT_TIMEOUT = 60.0
+DEFAULT_MAX_STATE_CHARS = 12000
+DEFAULT_THRESHOLDS = {
+    "outcome_min": 0.90,
+    "unresolved_max": 0.10,
+    "scope_max": 0.15,
+    "action_conf_min": 0.80,
+}
+CONFIG_KEYS = {"model", "transport", "timeout", "thresholds"}
+THRESHOLD_ENV = {
+    "outcome_min": "JEVCTL_OUTCOME_MIN",
+    "unresolved_max": "JEVCTL_UNRESOLVED_MAX",
+    "scope_max": "JEVCTL_SCOPE_MAX",
+    "action_conf_min": "JEVCTL_ACTION_CONF_MIN",
+}
+ALLOWED_ACTIONS = (
+    "complete",
+    "retry_fix",
+    "reinvestigate",
+    "orchestrator_review",
+)
+ANSWER_IDS = ("outcome_supported", "unresolved_issue", "scope_exceeded")
+TRUNCATION_MARKER = "[state truncated]"
+USAGE = "usage: jevctl {doctor|completion-gate}"
+
+
+class JevctlError(Exception):
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def reject_json_constant(_value):
+    raise ValueError("non-standard JSON constant")
+
+
+def parse_json(text):
+    return json.loads(text, parse_constant=reject_json_constant)
+
+
+def is_valid_json_value(value):
+    if value is None or isinstance(value, (str, bool, int)):
+        return True
+    if isinstance(value, float):
+        return math.isfinite(value)
+    if isinstance(value, list):
+        return all(is_valid_json_value(item) for item in value)
+    if isinstance(value, dict):
+        return all(
+            isinstance(key, str) and is_valid_json_value(item)
+            for key, item in value.items()
+        )
+    return False
+
+
+def config_file_path():
+    config_home = os.environ.get("XDG_CONFIG_HOME")
+    if config_home:
+        base = Path(config_home)
+    else:
+        base = Path(os.environ.get("HOME") or str(Path.home())) / ".config"
+    return base / "agent-orchestration" / "jev.json"
+
+
+def parse_probability(value, allow_string=False):
+    if allow_string and isinstance(value, str):
+        try:
+            value = float(value)
+        except ValueError:
+            raise JevctlError("invalid_config") from None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise JevctlError("invalid_config")
+    try:
+        result = float(value)
+    except OverflowError:
+        raise JevctlError("invalid_config") from None
+    if not math.isfinite(result) or result < 0.0 or result > 1.0:
+        raise JevctlError("invalid_config")
+    return result
+
+
+def parse_positive_number(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise JevctlError("invalid_config")
+    try:
+        result = float(value)
+    except OverflowError:
+        raise JevctlError("invalid_config") from None
+    if not math.isfinite(result) or result <= 0.0:
+        raise JevctlError("invalid_config")
+    return result
+
+
+def load_settings():
+    config = {}
+    path = config_file_path()
+    try:
+        if path.is_file():
+            loaded = parse_json(path.read_text(encoding="utf-8"))
+            if not isinstance(loaded, dict) or not set(loaded).issubset(CONFIG_KEYS):
+                raise JevctlError("invalid_config")
+            config = loaded
+    except JevctlError:
+        raise
+    except (OSError, UnicodeError, ValueError, RecursionError):
+        raise JevctlError("invalid_config") from None
+
+    settings = {
+        "model": config.get("model", DEFAULT_MODEL),
+        "transport": config.get("transport", DEFAULT_TRANSPORT),
+        "timeout": config.get("timeout", DEFAULT_TIMEOUT),
+        "thresholds": dict(DEFAULT_THRESHOLDS),
+    }
+    configured_thresholds = config.get("thresholds", {})
+    if not isinstance(configured_thresholds, dict) or not set(configured_thresholds).issubset(
+        DEFAULT_THRESHOLDS
+    ):
+        raise JevctlError("invalid_config")
+    for key in DEFAULT_THRESHOLDS:
+        if key in configured_thresholds:
+            settings["thresholds"][key] = parse_probability(configured_thresholds[key])
+
+    env_settings = {
+        "model": "JEVCTL_MODEL",
+        "transport": "JEVCTL_TRANSPORT",
+    }
+    for setting, env_name in env_settings.items():
+        if env_name in os.environ:
+            settings[setting] = os.environ[env_name]
+    for key, env_name in THRESHOLD_ENV.items():
+        if env_name in os.environ:
+            settings["thresholds"][key] = parse_probability(os.environ[env_name], allow_string=True)
+
+    if not isinstance(settings["model"], str) or not settings["model"].strip():
+        raise JevctlError("invalid_config")
+    settings["model"] = settings["model"].strip()
+    if settings["transport"] not in ("cmd", "provider"):
+        raise JevctlError("invalid_config")
+    if "JEVCTL_TIMEOUT" in os.environ:
+        try:
+            settings["timeout"] = float(os.environ["JEVCTL_TIMEOUT"])
+        except ValueError:
+            raise JevctlError("invalid_config") from None
+    settings["timeout"] = parse_positive_number(settings["timeout"])
+    if "JEVCTL_MAX_STATE_CHARS" in os.environ:
+        try:
+            state_cap = int(os.environ["JEVCTL_MAX_STATE_CHARS"])
+        except ValueError:
+            raise JevctlError("invalid_config") from None
+        if state_cap <= 0:
+            raise JevctlError("invalid_config")
+    else:
+        state_cap = DEFAULT_MAX_STATE_CHARS
+    settings["max_state_chars"] = state_cap
+    return settings
+
+
+def safe_child_environment():
+    """Pass runtime essentials only; do not forward ambient credential variables."""
+    allowed = ("PATH", "HOME", "XDG_CONFIG_HOME", "TMPDIR", "LANG", "LC_ALL")
+    return {name: os.environ[name] for name in allowed if name in os.environ}
+
+
+def reason_for_exit(returncode):
+    if returncode == 3:
+        return "auth_error"
+    if returncode == 5:
+        return "rate_limited"
+    return "transport_error"
+
+
+def run_cmd_smoke(timeout):
+    command_path = shutil.which("cmd")
+    if command_path is None:
+        raise JevctlError("missing_command")
+    try:
+        result = subprocess.run(
+            [command_path, "--version"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout,
+            env=safe_child_environment(),
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        raise JevctlError("timeout") from None
+    except OSError:
+        raise JevctlError("transport_error") from None
+    if result.returncode != 0:
+        raise JevctlError(reason_for_exit(result.returncode))
+    return command_path
+
+
+def doctor_result():
+    try:
+        settings = load_settings()
+    except JevctlError as error:
+        return {
+            "ok": False,
+            "model": DEFAULT_MODEL,
+            "transport": DEFAULT_TRANSPORT,
+            "reason": error.reason,
+        }
+
+    if settings["transport"] == "provider":
+        return {
+            "ok": False,
+            "model": settings["model"],
+            "transport": settings["transport"],
+            "reason": "provider_not_implemented",
+        }
+    try:
+        command_path = run_cmd_smoke(settings["timeout"])
+    except JevctlError as error:
+        return {
+            "ok": False,
+            "model": settings["model"],
+            "transport": settings["transport"],
+            "reason": error.reason,
+        }
+    return {
+        "ok": True,
+        "model": settings["model"],
+        "transport": settings["transport"],
+        "cmd_path": command_path,
+    }
+
+
+def validate_gate_input(data):
+    if not isinstance(data, dict):
+        raise JevctlError("invalid_request")
+    required = {
+        "task_summary",
+        "root_cause_summary",
+        "implementation_summary",
+        "changed_files",
+        "diff_stats",
+        "verification",
+        "tests_summary",
+        "remaining_issues",
+        "review_findings",
+        "deterministic_pass",
+    }
+    if not required.issubset(data):
+        raise JevctlError("invalid_request")
+    for key in (
+        "task_summary",
+        "root_cause_summary",
+        "implementation_summary",
+        "tests_summary",
+    ):
+        if not isinstance(data[key], str):
+            raise JevctlError("invalid_request")
+    if not isinstance(data["changed_files"], list) or not all(
+        isinstance(item, str) for item in data["changed_files"]
+    ):
+        raise JevctlError("invalid_request")
+    if not isinstance(data["remaining_issues"], list) or not all(
+        isinstance(item, str) for item in data["remaining_issues"]
+    ):
+        raise JevctlError("invalid_request")
+    if not isinstance(data["deterministic_pass"], bool):
+        raise JevctlError("invalid_request")
+
+    verification = data["verification"]
+    if not isinstance(verification, dict):
+        raise JevctlError("invalid_request")
+    if not isinstance(verification.get("commands"), list) or not all(
+        isinstance(item, str) for item in verification["commands"]
+    ):
+        raise JevctlError("invalid_request")
+    has_exit_status = "exit_status" in verification
+    has_results = "per_command_results" in verification or "results" in verification
+    if not (has_exit_status or has_results):
+        raise JevctlError("invalid_request")
+    if has_exit_status and (
+        isinstance(verification["exit_status"], bool)
+        or not isinstance(verification["exit_status"], int)
+    ):
+        raise JevctlError("invalid_request")
+    for key in ("per_command_results", "results"):
+        if key in verification and not isinstance(verification[key], (list, dict)):
+            raise JevctlError("invalid_request")
+
+    # Restrict state to the settled report fields; do not forward extra caller data.
+    summary = {
+        "task_summary": data["task_summary"],
+        "root_cause_summary": data["root_cause_summary"],
+        "implementation_summary": data["implementation_summary"],
+        "changed_files": data["changed_files"],
+        "diff_stats": data["diff_stats"],
+        "verification": verification,
+        "tests_summary": data["tests_summary"],
+        "remaining_issues": data["remaining_issues"],
+        "review_findings": data["review_findings"],
+        "deterministic_pass": data["deterministic_pass"],
+    }
+    if not is_valid_json_value(summary):
+        raise JevctlError("invalid_request")
+    return summary
+
+
+def make_state(summary, char_cap):
+    compact = json.dumps(
+        summary,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+        allow_nan=False,
+    )
+    if len(compact) > char_cap:
+        if char_cap >= len(TRUNCATION_MARKER):
+            compact = compact[: char_cap - len(TRUNCATION_MARKER)] + TRUNCATION_MARKER
+        else:
+            compact = TRUNCATION_MARKER[:char_cap]
+    return compact
+
+
+def build_questions():
+    return {
+        "outcome_supported": {
+            "type": "noul",
+            "instructions": "Estimate the probability that the requested outcome is achieved, based only on the settled evidence.",
+            "criteria": {
+                "true": "The summarized implementation and verification support that the requested outcome is achieved.",
+                "false": "The settled evidence does not adequately support that the requested outcome is achieved.",
+            },
+        },
+        "unresolved_issue": {
+            "type": "noul",
+            "instructions": "Estimate the probability that a material issue remains unresolved.",
+            "criteria": {
+                "true": "A material defect, failed check, or unresolved blocker remains.",
+                "false": "No material unresolved issue is indicated by the settled report.",
+            },
+        },
+        "scope_exceeded": {
+            "type": "noul",
+            "instructions": "Estimate the probability that implementation exceeded the authorized scope.",
+            "criteria": {
+                "true": "The reported changes exceed the task's authorized scope.",
+                "false": "The reported changes remain within the authorized scope.",
+            },
+        },
+        "next_action": {
+            "type": "choice",
+            "instructions": "Choose the single appropriate next action based only on the settled state and these criteria.",
+            "criteria": {
+                "complete": "The intended outcome is supported, deterministic checks passed, and no material unresolved issue or scope violation remains.",
+                "retry_fix": "A clear implementation defect needs a bounded correction from the fixer.",
+                "reinvestigate": "A cause or assumption remains uncertain and needs further investigation.",
+                "orchestrator_review": "The result needs the orchestrator's judgment; do not infer permission to complete.",
+            },
+        },
+    }
+
+def cmd_transport(request, model, timeout):
+    command_path = shutil.which("cmd")
+    if command_path is None:
+        raise JevctlError("missing_command")
+    prompt = json.dumps(request, ensure_ascii=False, separators=(",", ":"))
+    try:
+        result = subprocess.run(
+            [command_path, "-p", prompt, "-m", model],
+            input="",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout,
+            env=safe_child_environment(),
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        raise JevctlError("timeout") from None
+    except OSError:
+        raise JevctlError("transport_error") from None
+    if result.returncode != 0:
+        raise JevctlError(reason_for_exit(result.returncode))
+    try:
+        return parse_json(result.stdout)
+    except (ValueError, TypeError, RecursionError):
+        raise JevctlError("invalid_response") from None
+
+
+def provider_transport(_request, _model, _timeout):
+    # Future extension point. v1 intentionally has no provider API or key handling.
+    raise JevctlError("provider_not_implemented")
+
+
+def validate_response(response, model):
+    if not isinstance(response, dict) or set(response) != {"model", "answers", "usage"}:
+        raise JevctlError("invalid_response")
+    if response["model"] != model or not isinstance(response["model"], str):
+        raise JevctlError("invalid_response")
+    if not isinstance(response["usage"], dict) or not is_valid_json_value(response["usage"]):
+        raise JevctlError("invalid_response")
+    answers = response["answers"]
+    if not isinstance(answers, dict) or set(answers) != set(ANSWER_IDS) | {"next_action"}:
+        raise JevctlError("invalid_response")
+
+    values = {}
+    for answer_id in ANSWER_IDS:
+        answer = answers[answer_id]
+        if not isinstance(answer, dict) or set(answer) != {"type", "noul"}:
+            # In particular, Noul answers do not have a confidence field.
+            raise JevctlError("invalid_response")
+        if answer["type"] != "noul":
+            raise JevctlError("invalid_response")
+        try:
+            values[answer_id] = parse_probability(answer["noul"])
+        except JevctlError:
+            raise JevctlError("invalid_response") from None
+
+    action_answer = answers["next_action"]
+    if not isinstance(action_answer, dict) or set(action_answer) != {
+        "type",
+        "choice",
+        "confidence",
+        "probabilities",
+    }:
+        raise JevctlError("invalid_response")
+    if action_answer["type"] != "choice":
+        raise JevctlError("invalid_response")
+    action = action_answer["choice"]
+    if not isinstance(action, str) or action not in ALLOWED_ACTIONS:
+        raise JevctlError("invalid_response")
+    try:
+        confidence = parse_probability(action_answer["confidence"])
+    except JevctlError:
+        raise JevctlError("invalid_response") from None
+    probabilities = action_answer["probabilities"]
+    if not isinstance(probabilities, dict) or any(
+        not isinstance(option, str) or option not in ALLOWED_ACTIONS for option in probabilities
+    ):
+        raise JevctlError("invalid_response")
+    try:
+        for probability in probabilities.values():
+            parse_probability(probability)
+    except JevctlError:
+        raise JevctlError("invalid_response") from None
+    return values, action, confidence
+
+
+def unavailable_result(reason):
+    return {
+        "schema_version": 1,
+        "gate": "completion",
+        "status": "unavailable",
+        "action": "orchestrator_review",
+        "auto_apply": False,
+        "certainty": 0.0,
+        "answers": {answer_id: None for answer_id in ANSWER_IDS},
+        "next_action": "orchestrator_review",
+        "next_action_confidence": 0.0,
+        "reason": reason,
+    }
+
+
+def completion_result():
+    try:
+        settings = load_settings()
+        try:
+            data = parse_json(sys.stdin.read())
+        except (ValueError, TypeError, RecursionError):
+            raise JevctlError("invalid_request") from None
+        summary = validate_gate_input(data)
+        request = {
+            "state": make_state(summary, settings["max_state_chars"]),
+            "questions": build_questions(),
+        }
+        if settings["transport"] == "cmd":
+            response = cmd_transport(request, settings["model"], settings["timeout"])
+        else:
+            response = provider_transport(request, settings["model"], settings["timeout"])
+        values, action, confidence = validate_response(response, settings["model"])
+    except JevctlError as error:
+        return unavailable_result(error.reason)
+    except (OSError, UnicodeError, ValueError, TypeError, RecursionError):
+        return unavailable_result("invalid_response")
+
+    thresholds = settings["thresholds"]
+    thresholds_hold = (
+        values["outcome_supported"] >= thresholds["outcome_min"]
+        and values["unresolved_issue"] <= thresholds["unresolved_max"]
+        and values["scope_exceeded"] <= thresholds["scope_max"]
+        and confidence >= thresholds["action_conf_min"]
+    )
+    certainty = min(
+        values["outcome_supported"],
+        1.0 - values["unresolved_issue"],
+        1.0 - values["scope_exceeded"],
+        confidence,
+    )
+    status = "decided" if thresholds_hold else "uncertain"
+    auto_apply = bool(
+        data["deterministic_pass"]
+        and status == "decided"
+        and action == "complete"
+        and thresholds_hold
+    )
+    return {
+        "schema_version": 1,
+        "gate": "completion",
+        "status": status,
+        "action": action,
+        "auto_apply": auto_apply,
+        "certainty": certainty,
+        "answers": values,
+        "next_action": action,
+        "next_action_confidence": confidence,
+    }
+
+
+def emit_json(value):
+    print(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+
+
+def main(argv):
+    if len(argv) != 2 or argv[1] not in ("doctor", "completion-gate"):
+        print(USAGE, file=sys.stderr)
+        return 2
+    if argv[1] == "doctor":
+        try:
+            result = doctor_result()
+        except KeyboardInterrupt:
+            result = {
+                "ok": False,
+                "model": DEFAULT_MODEL,
+                "transport": DEFAULT_TRANSPORT,
+                "reason": "interrupted",
+            }
+        except Exception:
+            result = {
+                "ok": False,
+                "model": DEFAULT_MODEL,
+                "transport": DEFAULT_TRANSPORT,
+                "reason": "transport_error",
+            }
+        if not result["ok"]:
+            print("jevctl: " + result["reason"], file=sys.stderr)
+        emit_json(result)
+        return 0
+    try:
+        result = completion_result()
+    except KeyboardInterrupt:
+        result = unavailable_result("interrupted")
+    except Exception:
+        result = unavailable_result("transport_error")
+    if result["status"] == "unavailable":
+        print("jevctl: " + result["reason"], file=sys.stderr)
+    emit_json(result)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
