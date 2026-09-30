@@ -1,3 +1,4 @@
+import importlib.util
 import json
 import os
 import subprocess
@@ -654,6 +655,79 @@ class JevctlTest(unittest.TestCase):
         self.assertNotEqual(0, completed.returncode)
         self.assertEqual("", completed.stdout)
         self.assertIn("usage:", completed.stderr)
+
+    def test_unexpected_gate_error_surfaces_instead_of_transport_error(self):
+        import importlib.machinery
+
+        loader = importlib.machinery.SourceFileLoader("jevctl_under_test", str(JEVCTL))
+        spec = importlib.util.spec_from_loader("jevctl_under_test", loader)
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+
+        def boom():
+            raise RuntimeError("boom")
+
+        original = module.completion_result
+        module.completion_result = boom
+        try:
+            with self.assertRaises(RuntimeError):
+                module.main(["jevctl", "completion-gate"])
+        finally:
+            module.completion_result = original
+
+    def test_unexpected_doctor_error_surfaces_instead_of_transport_error(self):
+        import importlib.machinery
+
+        loader = importlib.machinery.SourceFileLoader("jevctl_under_test", str(JEVCTL))
+        spec = importlib.util.spec_from_loader("jevctl_under_test", loader)
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+
+        def boom():
+            raise RuntimeError("boom")
+
+        original = module.doctor_result
+        module.doctor_result = boom
+        try:
+            with self.assertRaises(RuntimeError):
+                module.main(["jevctl", "doctor"])
+        finally:
+            module.doctor_result = original
+
+    def test_keyboard_interrupt_stays_normalized_for_both_paths(self):
+        import contextlib
+        import importlib.machinery
+        import io
+
+        loader = importlib.machinery.SourceFileLoader("jevctl_under_test", str(JEVCTL))
+        spec = importlib.util.spec_from_loader("jevctl_under_test", loader)
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+
+        def raise_keyboard_interrupt():
+            raise KeyboardInterrupt
+
+        original_gate = module.completion_result
+        module.completion_result = raise_keyboard_interrupt
+        try:
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                self.assertEqual(0, module.main(["jevctl", "completion-gate"]))
+            self.assertIn("interrupted", stderr.getvalue())
+            self.assertEqual("interrupted", json.loads(stdout.getvalue())["reason"])
+        finally:
+            module.completion_result = original_gate
+
+        original_doctor = module.doctor_result
+        module.doctor_result = raise_keyboard_interrupt
+        try:
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                self.assertEqual(0, module.main(["jevctl", "doctor"]))
+            self.assertIn("interrupted", stderr.getvalue())
+            self.assertEqual("interrupted", json.loads(stdout.getvalue())["reason"])
+        finally:
+            module.doctor_result = original_doctor
 
 
 if __name__ == "__main__":

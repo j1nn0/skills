@@ -619,15 +619,6 @@ def main(argv):
                 "mode": DEFAULT_MODE,
                 "reason": "interrupted",
             }
-        except Exception:
-            result = {
-                "ok": False,
-                "model": DEFAULT_MODEL,
-                "transport": DEFAULT_TRANSPORT,
-                "enabled": False,
-                "mode": DEFAULT_MODE,
-                "reason": "transport_error",
-            }
         if not result["ok"]:
             print("jevctl: " + result["reason"], file=sys.stderr)
         emit_json(result)
@@ -636,8 +627,6 @@ def main(argv):
         result = completion_result()
     except KeyboardInterrupt:
         result = unavailable_result("interrupted")
-    except Exception:
-        result = unavailable_result("transport_error")
     if result["status"] == "unavailable":
         print("jevctl: " + result["reason"], file=sys.stderr)
     emit_json(result)
