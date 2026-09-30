@@ -1,6 +1,6 @@
 # Optional Jev Completion Gate
 
-The Completion Gate is an optional decision aid for the `agent-orchestration` skill. It lets TypeSafe AI Jev assess a settled implementation report and recommend whether the orchestrator should complete, retry a fix, reinvestigate, or review the result. Jev does not replace the orchestrator's review or project verification, and removing or disabling Jev leaves the existing workflow unchanged. It adds no startup question.
+The Completion Gate is an optional decision aid for `agent-orchestration`, disabled by default until the live path is smoke-tested. It can assess a settled implementation report and recommend a next action; it does not replace diff review, deterministic project verification, or orchestrator judgment. Enabling or removing it adds no startup question and leaves Explorer/Fixer persistence unchanged.
 
 ## Authority and scope
 
@@ -10,50 +10,38 @@ Decision precedence is:
 user > safety > skill invariants > persisted config > deterministic verification > Jev > conservative fallback
 ```
 
-Jev may assess whether the reported outcome is supported, whether issues appear unresolved, whether scope appears exceeded, and which bounded next action is appropriate. Jev cannot waive user or safety requirements, change skill invariants, override deterministic failures, make project changes, or select harnesses, models, or effort. The orchestrator remains responsible for reviewing the actual diff and deciding what to do.
+Jev may assess outcome support, unresolved issues, scope, and one next action (`complete`, `retry_fix`, `reinvestigate`, or `orchestrator_review`). It cannot waive user or safety requirements, change skill invariants, override deterministic failures, make project changes, or select harnesses, models, or effort. The orchestrator remains responsible for reviewing the actual diff and deciding what to do.
 
 ## Completion lifecycle
 
-The gate is considered only after the orchestrator's diff review and project verification have passed. Deterministic failures stay in the existing review/retry workflow and are not sent as a request to Jev.
+The orchestrator should invoke the gate only after diff review and deterministic project verification have passed. As a defensive short-circuit, valid input with `deterministic_pass: false` returns unavailable with reason `deterministic_failure` before request construction or any `cmd` subprocess. A deterministic failure stays in the existing review/retry workflow; Jev is never asked to override it.
 
 ```text
 fixer report -> diff review -> verification -> orchestrator review -> gate -> complete / retry / reinvestigate / orchestrator_review
 ```
 
-The gate's `auto_apply` field is only a completion signal for the caller; it never applies changes. It can be true only when deterministic checks passed, Jev's result is sufficiently certain, and Jev recommends `complete`.
+## Settled input and privacy
 
-## Settled input state
+`bin/jevctl completion-gate` reads one JSON object from stdin containing `task_summary`, `root_cause_summary`, `implementation_summary`, `changed_files`, `diff_stats`, `verification`, `tests_summary`, `remaining_issues`, `review_findings`, and `deterministic_pass`. It sends only these settled report fields as compact `state`, not extra caller data. The orchestrator sets `deterministic_pass`; Jev is never asked to overrule a failed deterministic check.
 
-`bin/jevctl completion-gate` reads one JSON object from stdin with these fields:
+The state is capped by `JEVCTL_MAX_STATE_CHARS` (default `12000` characters) and truncated with a marker. This deliberately conservative cap leaves room for the questions and reduces the chance of approaching the model budget; character count is not an exact token count. TypeSafe's input-token budgets are 64k for state plus all questions combined, and 32k for state plus the single longest question. Both budgets count encoded input tokens, so keep the full request below both limits.
 
-- `task_summary`, `root_cause_summary`, `implementation_summary`
-- `changed_files` (array), `diff_stats`
-- `verification` (`commands` plus `exit_status` or per-command `per_command_results` / `results`)
-- `tests_summary`, `remaining_issues` (array), `review_findings`
-- `deterministic_pass` (boolean, set by the orchestrator)
-
-The request contains only these settled report fields, serialized compactly as `state`. The state is capped at `JEVCTL_MAX_STATE_CHARS` characters (default `12000`) and truncated with a marker when necessary. Keep it well below Jev's 64k budget, including the questions and protocol overhead. Callers must not send secrets, credentials, tokens, authorization headers, raw transcripts, or unrelated history. Do not put secrets in the configuration file or environment for this gate; authentication is supplied by the logged-in `cmd` session (`cmd login`). The gate does not read, copy, or display the Command Code credential file or credential values.
+Callers must not send secrets, credentials, API keys, tokens, authorization headers, raw transcripts, full-repository contents, or unrelated history. Authentication comes from the logged-in Command Code `cmd` session (`cmd login`); the gate does not access the credential file or forward credential variables. `CMD_ZDR`, when set, is forwarded unchanged to `cmd`. The child environment otherwise remains limited to runtime essentials. Command stderr is captured and never copied into stdout or response reasons.
 
 ## Questions
 
-The request uses the System One shape `{ "state": ..., "questions": {...} }`. `questions` is an object keyed by the caller-chosen ids, not an array; each value has its `type` and `instructions`. Each `noul` question also has `criteria` with explicit `true` and `false` meanings. The `choice` question uses `criteria` as a mapping from each action name to its instruction; there are no per-question `id`, `question`, or `options` fields.
+The request has the System One shape `{ "state": ..., "questions": {...} }`. `questions` is an object keyed by the four caller-chosen ids; it is not an array. Each Noul item has `type`, `instructions`, and `criteria` with explicit `true` and `false` meanings. The choice item has `type`, `instructions`, and a `criteria` object mapping each allowed action to its instruction:
 
-The four question ids and meanings are:
+- `outcome_supported` (`noul`): probability that the settled evidence supports the requested outcome.
+- `unresolved_issue` (`noul`): probability that a material issue remains unresolved.
+- `scope_exceeded` (`noul`): probability that implementation exceeded authorized scope.
+- `next_action` (`choice`): one of `complete`, `retry_fix`, `reinvestigate`, or `orchestrator_review`.
 
-1. `outcome_supported` (`noul`): probability the settled evidence supports the requested outcome.
-2. `unresolved_issue` (`noul`): probability that a material issue remains unresolved.
-3. `scope_exceeded` (`noul`): probability that implementation exceeded authorized scope.
-4. `next_action` (`choice`): select one action from the criteria mapping:
-   - `complete`: the outcome is supported, deterministic checks passed, and no material issue or scope violation remains;
-   - `retry_fix`: a clear implementation defect needs a bounded correction;
-   - `reinvestigate`: a cause or assumption remains uncertain;
-   - `orchestrator_review`: the result needs the orchestrator's judgment.
+Noul values are probabilities from `0` to `1` that the corresponding `true` criterion holds; Noul answers have no confidence. A choice answer carries separate confidence and probabilities.
 
-Noul values are probabilities from `0` to `1` that their `true` criterion holds; they do not carry confidence. The choice answer includes a separate confidence and probabilities for its options.
+## Decision and completion policy
 
-## Thresholds and normalized result
-
-Defaults are centralized in `bin/jevctl` and can be overridden by the corresponding `JEVCTL_*` environment variable or JSON configuration threshold:
+Defaults are centralized in `bin/jevctl` and may be overridden by environment variables or the configuration file:
 
 | Setting | Default | Passing condition |
 | --- | ---: | --- |
@@ -62,22 +50,53 @@ Defaults are centralized in `bin/jevctl` and can be overridden by the correspond
 | `JEVCTL_SCOPE_MAX` / `scope_max` | `0.15` | `scope_exceeded <= threshold` |
 | `JEVCTL_ACTION_CONF_MIN` / `action_conf_min` | `0.80` | `next_action_confidence >= threshold` |
 
-Certainty is:
+For a valid Jev response, `status` is `decided` iff `next_action_confidence >= ACTION_CONF_MIN`; otherwise it is `uncertain`. Disabled and deterministic-failure short-circuits, as well as integration failures, return `unavailable`. Completion eligibility is a separate conjunction:
 
 ```text
-min(outcome_supported, 1 - unresolved_issue, 1 - scope_exceeded, next_action_confidence)
+outcome_supported >= OUTCOME_MIN
+and unresolved_issue <= UNRESOLVED_MAX
+and scope_exceeded <= SCOPE_MAX
 ```
 
-A valid response is `decided` only when all four threshold conditions hold; otherwise it is `uncertain`. The normalized object has `schema_version`, `gate`, `status`, `action`, `auto_apply`, `certainty`, `answers` (`outcome_supported`, `unresolved_issue`, `scope_exceeded`), `next_action`, and `next_action_confidence`. `action` and `next_action` carry Jev's validated choice. `auto_apply` is true only when `deterministic_pass` is true, status is `decided`, action is `complete`, and all thresholds pass.
+`completion_confidence` is the minimum of `outcome_supported`, `1 - unresolved_issue`, `1 - scope_exceeded`, and `next_action_confidence`. It describes overall completion suitability; it does not determine `status` by itself. `auto_apply` is true only when deterministic checks passed, status is `decided`, action is `complete`, and completion eligibility holds. A confident `retry_fix` or `reinvestigate` can be `decided` but never auto-applies. Weak completion evidence also never auto-applies.
 
-## Failure behavior
+The normalized response contains `schema_version`, `gate`, `status`, `action`, `auto_apply`, `completion_confidence`, `answers` (`outcome_supported`, `unresolved_issue`, `scope_exceeded`), `next_action`, and `next_action_confidence`. Unavailable results have `completion_confidence: 0.0`, null Noul answers, `action: "orchestrator_review"`, and `auto_apply: false`.
 
-Missing `cmd`, timeout, nonzero exit, malformed JSON, invalid probabilities, or any response-schema violation produces `status: "unavailable"`, `action: "orchestrator_review"`, and `auto_apply: false`, with a machine-readable `reason`. No failure or uncertain result auto-completes work. Auth and rate-limit exit codes are reported as unavailable; the gate does not retry or fail over to another transport. A missing or disabled `cmd` therefore leaves the skill's existing workflow intact.
+## Response validation and compatibility
 
-`bin/jevctl doctor` is diagnostic only. It prints one JSON object, checks that `cmd` is available, and runs the local `cmd --version` smoke probe. It does not perform a model request or change local state; it reports `ok: false` with a reason when the command is unavailable or the probe fails. Neither subcommand prints command diagnostics or credentials to stdout.
+Validation is strict for fields that affect the decision, but tolerant of additive fields. The response must include `model`, `answers`, and `usage`; all four expected answer ids must be present. Unknown top-level fields and unknown extra answer ids are ignored. Extra fields on known answer objects are also ignored, including a future field on a Noul answer. Consumed types, finite probability ranges, choice names, and probability keys are still validated; violations make the gate unavailable.
 
-## Configuration and transport
+The returned `model` must be a non-empty string and either match the configured request model verbatim or look like a Jev family id (`jev-latest`, a `jev-` version such as `jev-1.13.0`, or a `typesafe/jev` id). Command Code may report the resolved version that answered instead of the alias requested.
 
-The optional JSON file is `${XDG_CONFIG_HOME:-$HOME/.config}/agent-orchestration/jev.json`. It may contain only `model`, `transport`, `timeout`, and `thresholds` settings. Environment variables take precedence: `JEVCTL_MODEL` (default `typesafe/jev`), `JEVCTL_TRANSPORT` (default `cmd`), `JEVCTL_TIMEOUT` (default `60` seconds), and the threshold variables above. `JEVCTL_MAX_STATE_CHARS` controls the state cap. Authentication comes from the logged-in Command Code `cmd` session; v1 has no API-key configuration or provider API transport.
+## Enablement and configuration
 
-The current transport invokes `cmd -p '<request-json>' -m typesafe/jev`. The provider transport is only a marked extension point. Future Explorer, Parallel, and Plan gates are also possible extension points, but are not specified or implemented here.
+The optional configuration file is `${XDG_CONFIG_HOME:-$HOME/.config}/agent-orchestration/jev.json`. It may contain `model`, `transport`, `timeout`, `thresholds`, and boolean `enabled`. Enablement precedence is `JEVCTL_ENABLED` environment variable, then the config-file value, then the default `false`. The environment parser is case-insensitive, strips whitespace, and accepts `1`, `true`, `yes`, `on`, `0`, `false`, `no`, or `off`; any other value is invalid and fails conservatively. `JEVCTL_ENABLED=1` opts in. When disabled, `completion-gate` returns unavailable with reason `disabled` without spawning `cmd`; `doctor` reports `enabled: false`, `ok: false`, and reason `disabled` without a probe.
+
+Other overrides are `JEVCTL_MODEL` (default `typesafe/jev`), `JEVCTL_TRANSPORT` (default `cmd`), `JEVCTL_TIMEOUT` (default `60` seconds), `JEVCTL_MAX_STATE_CHARS`, and the threshold variables above. Environment settings take precedence over config. Authentication is solely the `cmd` login session; v1 has no API-key handling or provider API transport.
+
+## Transport failures and diagnostics
+
+Any missing command, timeout, nonzero exit, malformed JSON, invalid probability, or consumed-schema violation returns `status: "unavailable"`, `action: "orchestrator_review"`, `auto_apply: false`, and a machine-readable reason. No failure retries or falls back to another transport.
+
+Command Code headless exit codes map to reasons as follows:
+
+| Exit code | Reason |
+| ---: | --- |
+| `0` | success; validate the response |
+| `1` | `transport_error` |
+| `3` | `auth_error` |
+| `4` | `permission_denied` |
+| `5` | `rate_limited` |
+| `6` | `connection_error` |
+| `7` | `server_error` |
+| `8` | `max_turns_exceeded` |
+| `9` | `no_response` |
+| `10` | `insufficient_credits` (credits for the billing period are exhausted) |
+| `130` | `interrupted` |
+| any other nonzero | `transport_error` |
+
+With `CMD_ZDR=1`, `cmd` preserves the session-wide ZDR opt-in. Jev has no ZDR-capable upstream, so Command Code may refuse the request with HTTP 422 (`cmd_zdr_no_providers`) rather than route it to a retaining provider. Such a refusal remains unavailable; the gate does not disable ZDR or fail over.
+
+`bin/jevctl doctor` is diagnostic only and always prints one JSON object including `enabled`. When enabled on the `cmd` transport it checks for `cmd` and runs the local `cmd --version` smoke probe; probe failures use the same exit-code mapping. It makes no model request and mutates no local state. Both subcommands keep JSON alone on stdout and send only sanitized diagnostics to stderr.
+
+The `provider` transport remains an unimplemented extension point. Explorer, Parallel, and Plan gates are not part of this change and are unspecified.

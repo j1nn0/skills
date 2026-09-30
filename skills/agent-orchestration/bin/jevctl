@@ -20,7 +20,7 @@ DEFAULT_THRESHOLDS = {
     "scope_max": 0.15,
     "action_conf_min": 0.80,
 }
-CONFIG_KEYS = {"model", "transport", "timeout", "thresholds"}
+CONFIG_KEYS = {"model", "transport", "timeout", "thresholds", "enabled"}
 THRESHOLD_ENV = {
     "outcome_min": "JEVCTL_OUTCOME_MIN",
     "unresolved_max": "JEVCTL_UNRESOLVED_MAX",
@@ -35,6 +35,17 @@ ALLOWED_ACTIONS = (
 )
 ANSWER_IDS = ("outcome_supported", "unresolved_issue", "scope_exceeded")
 TRUNCATION_MARKER = "[state truncated]"
+EXIT_CODE_REASONS = {
+    3: "auth_error",
+    4: "permission_denied",
+    5: "rate_limited",
+    6: "connection_error",
+    7: "server_error",
+    8: "max_turns_exceeded",
+    9: "no_response",
+    10: "insufficient_credits",
+    130: "interrupted",
+}
 USAGE = "usage: jevctl {doctor|completion-gate}"
 
 
@@ -105,6 +116,18 @@ def parse_positive_number(value):
     return result
 
 
+def parse_enabled(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in ("1", "true", "yes", "on"):
+            return True
+        if normalized in ("0", "false", "no", "off"):
+            return False
+    raise JevctlError("invalid_config")
+
+
 def load_settings():
     config = {}
     path = config_file_path()
@@ -124,6 +147,7 @@ def load_settings():
         "transport": config.get("transport", DEFAULT_TRANSPORT),
         "timeout": config.get("timeout", DEFAULT_TIMEOUT),
         "thresholds": dict(DEFAULT_THRESHOLDS),
+        "enabled": False,
     }
     configured_thresholds = config.get("thresholds", {})
     if not isinstance(configured_thresholds, dict) or not set(configured_thresholds).issubset(
@@ -144,6 +168,10 @@ def load_settings():
     for key, env_name in THRESHOLD_ENV.items():
         if env_name in os.environ:
             settings["thresholds"][key] = parse_probability(os.environ[env_name], allow_string=True)
+    if "JEVCTL_ENABLED" in os.environ:
+        settings["enabled"] = parse_enabled(os.environ["JEVCTL_ENABLED"])
+    elif "enabled" in config:
+        settings["enabled"] = parse_enabled(config["enabled"])
 
     if not isinstance(settings["model"], str) or not settings["model"].strip():
         raise JevctlError("invalid_config")
@@ -171,16 +199,12 @@ def load_settings():
 
 def safe_child_environment():
     """Pass runtime essentials only; do not forward ambient credential variables."""
-    allowed = ("PATH", "HOME", "XDG_CONFIG_HOME", "TMPDIR", "LANG", "LC_ALL")
+    allowed = ("PATH", "HOME", "XDG_CONFIG_HOME", "TMPDIR", "LANG", "LC_ALL", "CMD_ZDR")
     return {name: os.environ[name] for name in allowed if name in os.environ}
 
 
 def reason_for_exit(returncode):
-    if returncode == 3:
-        return "auth_error"
-    if returncode == 5:
-        return "rate_limited"
-    return "transport_error"
+    return EXIT_CODE_REASONS.get(returncode, "transport_error")
 
 
 def run_cmd_smoke(timeout):
@@ -215,14 +239,24 @@ def doctor_result():
             "ok": False,
             "model": DEFAULT_MODEL,
             "transport": DEFAULT_TRANSPORT,
+            "enabled": False,
             "reason": error.reason,
         }
 
+    if not settings["enabled"]:
+        return {
+            "ok": False,
+            "model": settings["model"],
+            "transport": settings["transport"],
+            "enabled": False,
+            "reason": "disabled",
+        }
     if settings["transport"] == "provider":
         return {
             "ok": False,
             "model": settings["model"],
             "transport": settings["transport"],
+            "enabled": True,
             "reason": "provider_not_implemented",
         }
     try:
@@ -232,12 +266,14 @@ def doctor_result():
             "ok": False,
             "model": settings["model"],
             "transport": settings["transport"],
+            "enabled": True,
             "reason": error.reason,
         }
     return {
         "ok": True,
         "model": settings["model"],
         "transport": settings["transport"],
+        "enabled": True,
         "cmd_path": command_path,
     }
 
@@ -404,21 +440,32 @@ def provider_transport(_request, _model, _timeout):
 
 
 def validate_response(response, model):
-    if not isinstance(response, dict) or set(response) != {"model", "answers", "usage"}:
+    required_response_fields = {"model", "answers", "usage"}
+    if not isinstance(response, dict) or not required_response_fields.issubset(response):
         raise JevctlError("invalid_response")
-    if response["model"] != model or not isinstance(response["model"], str):
+
+    returned_model = response["model"]
+    if not isinstance(returned_model, str) or not returned_model.strip():
+        raise JevctlError("invalid_response")
+    is_jev_family = (
+        returned_model == "jev-latest"
+        or returned_model.startswith("jev-")
+        or returned_model.startswith("typesafe/jev")
+    )
+    if returned_model != model and not is_jev_family:
         raise JevctlError("invalid_response")
     if not isinstance(response["usage"], dict) or not is_valid_json_value(response["usage"]):
         raise JevctlError("invalid_response")
+
     answers = response["answers"]
-    if not isinstance(answers, dict) or set(answers) != set(ANSWER_IDS) | {"next_action"}:
+    required_answer_ids = set(ANSWER_IDS) | {"next_action"}
+    if not isinstance(answers, dict) or not required_answer_ids.issubset(answers):
         raise JevctlError("invalid_response")
 
     values = {}
     for answer_id in ANSWER_IDS:
         answer = answers[answer_id]
-        if not isinstance(answer, dict) or set(answer) != {"type", "noul"}:
-            # In particular, Noul answers do not have a confidence field.
+        if not isinstance(answer, dict) or not {"type", "noul"}.issubset(answer):
             raise JevctlError("invalid_response")
         if answer["type"] != "noul":
             raise JevctlError("invalid_response")
@@ -428,12 +475,8 @@ def validate_response(response, model):
             raise JevctlError("invalid_response") from None
 
     action_answer = answers["next_action"]
-    if not isinstance(action_answer, dict) or set(action_answer) != {
-        "type",
-        "choice",
-        "confidence",
-        "probabilities",
-    }:
+    required_choice_fields = {"type", "choice", "confidence", "probabilities"}
+    if not isinstance(action_answer, dict) or not required_choice_fields.issubset(action_answer):
         raise JevctlError("invalid_response")
     if action_answer["type"] != "choice":
         raise JevctlError("invalid_response")
@@ -464,7 +507,7 @@ def unavailable_result(reason):
         "status": "unavailable",
         "action": "orchestrator_review",
         "auto_apply": False,
-        "certainty": 0.0,
+        "completion_confidence": 0.0,
         "answers": {answer_id: None for answer_id in ANSWER_IDS},
         "next_action": "orchestrator_review",
         "next_action_confidence": 0.0,
@@ -475,11 +518,15 @@ def unavailable_result(reason):
 def completion_result():
     try:
         settings = load_settings()
+        if not settings["enabled"]:
+            return unavailable_result("disabled")
         try:
             data = parse_json(sys.stdin.read())
         except (ValueError, TypeError, RecursionError):
             raise JevctlError("invalid_request") from None
         summary = validate_gate_input(data)
+        if not data["deterministic_pass"]:
+            return unavailable_result("deterministic_failure")
         request = {
             "state": make_state(summary, settings["max_state_chars"]),
             "questions": build_questions(),
@@ -495,24 +542,23 @@ def completion_result():
         return unavailable_result("invalid_response")
 
     thresholds = settings["thresholds"]
-    thresholds_hold = (
+    completion_eligible = (
         values["outcome_supported"] >= thresholds["outcome_min"]
         and values["unresolved_issue"] <= thresholds["unresolved_max"]
         and values["scope_exceeded"] <= thresholds["scope_max"]
-        and confidence >= thresholds["action_conf_min"]
     )
-    certainty = min(
+    status = "decided" if confidence >= thresholds["action_conf_min"] else "uncertain"
+    completion_confidence = min(
         values["outcome_supported"],
         1.0 - values["unresolved_issue"],
         1.0 - values["scope_exceeded"],
         confidence,
     )
-    status = "decided" if thresholds_hold else "uncertain"
     auto_apply = bool(
         data["deterministic_pass"]
         and status == "decided"
         and action == "complete"
-        and thresholds_hold
+        and completion_eligible
     )
     return {
         "schema_version": 1,
@@ -520,7 +566,7 @@ def completion_result():
         "status": status,
         "action": action,
         "auto_apply": auto_apply,
-        "certainty": certainty,
+        "completion_confidence": completion_confidence,
         "answers": values,
         "next_action": action,
         "next_action_confidence": confidence,
@@ -543,6 +589,7 @@ def main(argv):
                 "ok": False,
                 "model": DEFAULT_MODEL,
                 "transport": DEFAULT_TRANSPORT,
+                "enabled": False,
                 "reason": "interrupted",
             }
         except Exception:
@@ -550,6 +597,7 @@ def main(argv):
                 "ok": False,
                 "model": DEFAULT_MODEL,
                 "transport": DEFAULT_TRANSPORT,
+                "enabled": False,
                 "reason": "transport_error",
             }
         if not result["ok"]:

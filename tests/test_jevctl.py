@@ -26,6 +26,8 @@ class JevctlTest(unittest.TestCase):
         self.env = os.environ.copy()
         self.env.pop("JEVCTL_MODEL", None)
         self.env.pop("JEVCTL_TRANSPORT", None)
+        self.env.pop("JEVCTL_ENABLED", None)
+        self.env.pop("CMD_ZDR", None)
         self.env.pop("JEVCTL_TIMEOUT", None)
         self.env.pop("JEVCTL_MAX_STATE_CHARS", None)
         for key in (
@@ -43,7 +45,7 @@ class JevctlTest(unittest.TestCase):
             }
         )
 
-    def install_cmd(self, response=None, raw_stdout=None, exit_code=0, version_code=0, capture_path=None):
+    def install_cmd(self, response=None, raw_stdout=None, exit_code=0, version_code=0, capture_path=None, invocation_marker=None, env_capture_path=None):
         if raw_stdout is None:
             raw_stdout = json.dumps(response, separators=(",", ":")) if response is not None else ""
         capture = ""
@@ -52,10 +54,19 @@ class JevctlTest(unittest.TestCase):
                 "if len(sys.argv) > 2 and sys.argv[1] == '-p':\n"
                 f"    open({str(capture_path)!r}, 'w', encoding='utf-8').write(sys.argv[2])\n"
             )
+        invocation = ""
+        if invocation_marker is not None:
+            invocation += f"open({str(invocation_marker)!r}, 'a').write('called\\n')\n"
+        if env_capture_path is not None:
+            invocation += (
+                f"open({str(env_capture_path)!r}, 'w', encoding='utf-8').write("
+                "os.environ.get('CMD_ZDR', '<absent>'))\n"
+            )
         script = (
             f"#!{sys.executable}\n"
             "import os, sys\n"
-            "if len(sys.argv) > 1 and sys.argv[1] == '--version':\n"
+            + invocation
+            + "if len(sys.argv) > 1 and sys.argv[1] == '--version':\n"
             "    print('cmd test stub')\n"
             f"    raise SystemExit({version_code})\n"
             + capture
@@ -74,9 +85,10 @@ class JevctlTest(unittest.TestCase):
         scope=0.03,
         action="complete",
         confidence=0.95,
+        model="typesafe/jev",
     ):
         return {
-            "model": "typesafe/jev",
+            "model": model,
             "answers": {
                 "outcome_supported": {"type": "noul", "noul": outcome},
                 "unresolved_issue": {"type": "noul", "noul": unresolved},
@@ -119,7 +131,8 @@ class JevctlTest(unittest.TestCase):
     def run_gate(self, response=None, **kwargs):
         self.install_cmd(response=response)
         payload = self.gate_input(**kwargs)
-        return self.run_jevctl("completion-gate", payload)
+        env = dict(self.env, JEVCTL_ENABLED="1")
+        return self.run_jevctl("completion-gate", payload, env=env)
 
     def parse_single_json(self, completed):
         self.assertEqual(0, completed.returncode, completed.stderr)
@@ -133,75 +146,106 @@ class JevctlTest(unittest.TestCase):
         self.assertEqual("decided", result["status"])
         self.assertEqual("complete", result["action"])
         self.assertTrue(result["auto_apply"])
-        self.assertAlmostEqual(0.95, result["certainty"])
+        self.assertAlmostEqual(0.95, result["completion_confidence"])
+        self.assertNotIn("certainty", result)
 
     def test_outcome_below_threshold_does_not_auto_apply(self):
-        response = self.valid_response(outcome=0.89)
+        result = self.parse_single_json(self.run_gate(self.valid_response(outcome=0.89)))
 
-        result = self.parse_single_json(self.run_gate(response))
-
-        self.assertEqual("uncertain", result["status"])
+        self.assertEqual("decided", result["status"])
+        self.assertAlmostEqual(0.89, result["completion_confidence"])
         self.assertFalse(result["auto_apply"])
 
     def test_unresolved_issue_above_threshold_does_not_auto_apply(self):
-        response = self.valid_response(unresolved=0.11)
+        result = self.parse_single_json(self.run_gate(self.valid_response(unresolved=0.11)))
 
-        result = self.parse_single_json(self.run_gate(response))
-
-        self.assertEqual("uncertain", result["status"])
+        self.assertEqual("decided", result["status"])
         self.assertFalse(result["auto_apply"])
 
     def test_scope_exceeded_above_threshold_does_not_auto_apply(self):
-        response = self.valid_response(scope=0.16)
+        result = self.parse_single_json(self.run_gate(self.valid_response(scope=0.16)))
 
-        result = self.parse_single_json(self.run_gate(response))
-
-        self.assertEqual("uncertain", result["status"])
+        self.assertEqual("decided", result["status"])
         self.assertFalse(result["auto_apply"])
 
     def test_non_complete_next_action_does_not_auto_apply(self):
-        response = self.valid_response(action="retry_fix")
-
-        result = self.parse_single_json(self.run_gate(response))
+        result = self.parse_single_json(self.run_gate(self.valid_response(action="retry_fix")))
 
         self.assertEqual("decided", result["status"])
         self.assertEqual("retry_fix", result["action"])
         self.assertFalse(result["auto_apply"])
 
-    def test_low_choice_confidence_does_not_auto_apply(self):
-        response = self.valid_response(confidence=0.79)
+    def test_high_confidence_reinvestigate_is_decided_without_auto_apply(self):
+        result = self.parse_single_json(
+            self.run_gate(self.valid_response(action="reinvestigate", confidence=0.95))
+        )
 
-        result = self.parse_single_json(self.run_gate(response))
+        self.assertEqual("decided", result["status"])
+        self.assertEqual("reinvestigate", result["action"])
+        self.assertFalse(result["auto_apply"])
+
+    def test_low_choice_confidence_is_uncertain(self):
+        result = self.parse_single_json(self.run_gate(self.valid_response(confidence=0.79)))
 
         self.assertEqual("uncertain", result["status"])
+        self.assertAlmostEqual(0.79, result["completion_confidence"])
         self.assertFalse(result["auto_apply"])
 
     def test_malformed_response_falls_back_to_unavailable(self):
         self.install_cmd(raw_stdout="not-json")
+        env = dict(self.env, JEVCTL_ENABLED="1")
 
-        completed = self.run_jevctl("completion-gate", self.gate_input())
+        completed = self.run_jevctl("completion-gate", self.gate_input(), env=env)
         result = self.parse_single_json(completed)
 
         self.assertEqual("unavailable", result["status"])
         self.assertEqual("invalid_response", result["reason"])
         self.assertEqual("orchestrator_review", result["action"])
         self.assertFalse(result["auto_apply"])
+        self.assertEqual(0.0, result["completion_confidence"])
         self.assertIn("invalid_response", completed.stderr)
 
     def test_nonzero_cmd_exit_falls_back_to_unavailable(self):
         self.install_cmd(response=self.valid_response(), exit_code=5)
+        env = dict(self.env, JEVCTL_ENABLED="1")
 
-        result = self.parse_single_json(self.run_jevctl("completion-gate", self.gate_input()))
+        result = self.parse_single_json(
+            self.run_jevctl("completion-gate", self.gate_input(), env=env)
+        )
 
         self.assertEqual("unavailable", result["status"])
         self.assertEqual("rate_limited", result["reason"])
         self.assertEqual("orchestrator_review", result["action"])
         self.assertFalse(result["auto_apply"])
 
+    def test_exit_code_reasons_cover_documented_failures(self):
+        cases = {
+            3: "auth_error",
+            4: "permission_denied",
+            5: "rate_limited",
+            6: "connection_error",
+            7: "server_error",
+            8: "max_turns_exceeded",
+            9: "no_response",
+            10: "insufficient_credits",
+            130: "interrupted",
+            1: "transport_error",
+        }
+        env = dict(self.env, JEVCTL_ENABLED="1")
+        for exit_code, reason in cases.items():
+            with self.subTest(exit_code=exit_code):
+                self.install_cmd(response=self.valid_response(), exit_code=exit_code)
+                result = self.parse_single_json(
+                    self.run_jevctl("completion-gate", self.gate_input(), env=env)
+                )
+                self.assertEqual("unavailable", result["status"])
+                self.assertEqual(reason, result["reason"])
+                self.assertFalse(result["auto_apply"])
+
     def test_missing_cmd_is_unavailable_and_doctor_reports_failure(self):
         empty_path = self.root / "empty-path"
         empty_path.mkdir()
-        env = dict(self.env, PATH=str(empty_path))
+        env = dict(self.env, PATH=str(empty_path), JEVCTL_ENABLED="1")
 
         gate = self.run_jevctl("completion-gate", self.gate_input(), env=env)
         gate_result = self.parse_single_json(gate)
@@ -212,25 +256,30 @@ class JevctlTest(unittest.TestCase):
         self.assertEqual("missing_command", gate_result["reason"])
         self.assertFalse(gate_result["auto_apply"])
         self.assertFalse(doctor_result["ok"])
+        self.assertTrue(doctor_result["enabled"])
         self.assertEqual("missing_command", doctor_result["reason"])
 
     def test_doctor_success_and_smoke_probe_failure_are_json(self):
         self.install_cmd()
-        success = self.parse_single_json(self.run_jevctl("doctor"))
+        env = dict(self.env, JEVCTL_ENABLED="1")
+        success = self.parse_single_json(self.run_jevctl("doctor", env=env))
         self.assertTrue(success["ok"])
         self.assertEqual("typesafe/jev", success["model"])
         self.assertEqual("cmd", success["transport"])
+        self.assertTrue(success["enabled"])
         self.assertIn("cmd_path", success)
 
         self.install_cmd(version_code=1)
-        failure = self.parse_single_json(self.run_jevctl("doctor"))
+        failure = self.parse_single_json(self.run_jevctl("doctor", env=env))
         self.assertFalse(failure["ok"])
+        self.assertTrue(failure["enabled"])
         self.assertEqual("transport_error", failure["reason"])
 
     def test_stdout_is_one_json_object_and_stderr_holds_diagnostic(self):
         self.install_cmd(raw_stdout="broken")
+        env = dict(self.env, JEVCTL_ENABLED="1")
 
-        completed = self.run_jevctl("completion-gate", self.gate_input())
+        completed = self.run_jevctl("completion-gate", self.gate_input(), env=env)
         result = self.parse_single_json(completed)
 
         self.assertEqual("unavailable", result["status"])
@@ -238,9 +287,143 @@ class JevctlTest(unittest.TestCase):
         self.assertEqual(1, completed.stdout.count("\n"))
         self.assertEqual("jevctl: invalid_response\n", completed.stderr)
 
+    def test_default_disabled_doctor_reports_disabled(self):
+        marker = self.root / "invoked"
+        self.install_cmd(invocation_marker=marker)
+
+        doctor = self.parse_single_json(self.run_jevctl("doctor"))
+
+        self.assertFalse(doctor["ok"])
+        self.assertFalse(doctor["enabled"])
+        self.assertEqual("disabled", doctor["reason"])
+        self.assertFalse(marker.exists())
+
+    def test_disabled_gate_never_invokes_cmd(self):
+        marker = self.root / "invoked"
+        self.install_cmd(response=self.valid_response(), invocation_marker=marker)
+
+        result = self.parse_single_json(
+            self.run_jevctl("completion-gate", self.gate_input())
+        )
+
+        self.assertEqual("unavailable", result["status"])
+        self.assertEqual("disabled", result["reason"])
+        self.assertEqual("orchestrator_review", result["action"])
+        self.assertFalse(result["auto_apply"])
+        self.assertEqual(0.0, result["completion_confidence"])
+        self.assertFalse(marker.exists())
+
+    def test_environment_enabled_opt_in_runs_gate(self):
+        marker = self.root / "invoked"
+        self.install_cmd(response=self.valid_response(), invocation_marker=marker)
+        env = dict(self.env, JEVCTL_ENABLED="1")
+
+        result = self.parse_single_json(
+            self.run_jevctl("completion-gate", self.gate_input(), env=env)
+        )
+
+        self.assertTrue(result["auto_apply"])
+        self.assertTrue(marker.exists())
+
+    def test_config_file_enabled_opt_in_runs_gate(self):
+        self.config_path.write_text(json.dumps({"enabled": True}), encoding="utf-8")
+        self.install_cmd(response=self.valid_response())
+
+        result = self.parse_single_json(
+            self.run_jevctl("completion-gate", self.gate_input())
+        )
+
+        self.assertTrue(result["auto_apply"])
+
+    def test_environment_enabled_overrides_config(self):
+        self.config_path.write_text(json.dumps({"enabled": False}), encoding="utf-8")
+        marker = self.root / "invoked"
+        self.install_cmd(response=self.valid_response(), invocation_marker=marker)
+        enabled_env = dict(self.env, JEVCTL_ENABLED=" YES ")
+
+        enabled_result = self.parse_single_json(
+            self.run_jevctl("completion-gate", self.gate_input(), env=enabled_env)
+        )
+
+        self.assertTrue(enabled_result["auto_apply"])
+        self.assertTrue(marker.exists())
+
+        marker.unlink()
+        self.config_path.write_text(json.dumps({"enabled": True}), encoding="utf-8")
+        disabled_env = dict(self.env, JEVCTL_ENABLED=" OFF ")
+        disabled_result = self.parse_single_json(
+            self.run_jevctl("completion-gate", self.gate_input(), env=disabled_env)
+        )
+        self.assertEqual("disabled", disabled_result["reason"])
+        self.assertFalse(marker.exists())
+
+    def test_invalid_enabled_values_fail_conservatively(self):
+        marker = self.root / "invoked"
+        self.install_cmd(response=self.valid_response(), invocation_marker=marker)
+        for value in ("maybe", "2", ""):
+            with self.subTest(value=value):
+                env = dict(self.env, JEVCTL_ENABLED=value)
+                result = self.parse_single_json(
+                    self.run_jevctl("completion-gate", self.gate_input(), env=env)
+                )
+                self.assertEqual("unavailable", result["status"])
+                self.assertEqual("invalid_config", result["reason"])
+                self.assertFalse(marker.exists())
+
+        self.config_path.write_text(json.dumps({"enabled": "maybe"}), encoding="utf-8")
+        config_result = self.parse_single_json(
+            self.run_jevctl("completion-gate", self.gate_input())
+        )
+        self.assertEqual("invalid_config", config_result["reason"])
+        self.assertFalse(marker.exists())
+
+    def test_cmd_zdr_is_forwarded_to_stub_child(self):
+        env_capture = self.root / "cmd-zdr.txt"
+        self.install_cmd(response=self.valid_response(), env_capture_path=env_capture)
+        env = dict(self.env, JEVCTL_ENABLED="1", CMD_ZDR="1")
+
+        result = self.parse_single_json(
+            self.run_jevctl("completion-gate", self.gate_input(), env=env)
+        )
+
+        self.assertTrue(result["auto_apply"])
+        self.assertEqual("1", env_capture.read_text(encoding="utf-8"))
+
+    def test_deterministic_failure_short_circuits_without_cmd(self):
+        marker = self.root / "invoked"
+        self.install_cmd(response=self.valid_response(), invocation_marker=marker)
+        env = dict(self.env, JEVCTL_ENABLED="1")
+
+        result = self.parse_single_json(
+            self.run_jevctl(
+                "completion-gate",
+                self.gate_input(deterministic_pass=False),
+                env=env,
+            )
+        )
+
+        self.assertEqual("unavailable", result["status"])
+        self.assertEqual("deterministic_failure", result["reason"])
+        self.assertEqual("orchestrator_review", result["action"])
+        self.assertFalse(result["auto_apply"])
+        self.assertEqual(0.0, result["completion_confidence"])
+        self.assertFalse(marker.exists())
+
+    def test_additive_fields_and_resolved_jev_model_are_accepted(self):
+        response = self.valid_response(model="jev-1.13.0")
+        response["future_metadata"] = {"provider_trace": "ignored"}
+        response["answers"]["outcome_supported"]["confidence"] = 0.7
+        response["answers"]["next_action"]["future_field"] = "ignored"
+        response["answers"]["future_question"] = {"type": "future", "value": None}
+
+        result = self.parse_single_json(self.run_gate(response))
+
+        self.assertEqual("decided", result["status"])
+        self.assertTrue(result["auto_apply"])
+
     def test_no_secret_leaks_from_environment_or_config(self):
         fake_secret = "FAKE_DO_NOT_PRINT_jev_key_123"
-        env = dict(self.env, COMMAND_CODE_API_KEY=fake_secret)
+        env = dict(self.env, COMMAND_CODE_API_KEY=fake_secret, JEVCTL_ENABLED="1")
         self.config_path.write_text(
             json.dumps({"model": "typesafe/jev", "api_key": fake_secret}),
             encoding="utf-8",
@@ -261,19 +444,11 @@ class JevctlTest(unittest.TestCase):
         self.assertNotIn(fake_secret, completed.stdout)
         self.assertNotIn(fake_secret, completed.stderr)
 
-    def test_deterministic_failure_forces_auto_apply_false(self):
-        result = self.parse_single_json(
-            self.run_gate(self.valid_response(), deterministic_pass=False)
-        )
-
-        self.assertEqual("decided", result["status"])
-        self.assertEqual("complete", result["action"])
-        self.assertFalse(result["auto_apply"])
 
     def test_request_has_object_questions_and_truncated_settled_state(self):
         capture_path = self.root / "request.json"
         self.install_cmd(response=self.valid_response(), capture_path=capture_path)
-        env = dict(self.env, JEVCTL_MAX_STATE_CHARS="100")
+        env = dict(self.env, JEVCTL_MAX_STATE_CHARS="100", JEVCTL_ENABLED="1")
 
         completed = self.run_jevctl("completion-gate", self.gate_input(), env=env)
         self.parse_single_json(completed)
@@ -320,18 +495,18 @@ class JevctlTest(unittest.TestCase):
 
     def test_threshold_environment_override_is_accepted(self):
         self.install_cmd(response=self.valid_response(outcome=0.97))
-        env = dict(self.env, JEVCTL_OUTCOME_MIN="0.98")
+        env = dict(self.env, JEVCTL_OUTCOME_MIN="0.98", JEVCTL_ENABLED="1")
 
         result = self.parse_single_json(
             self.run_jevctl("completion-gate", self.gate_input(), env=env)
         )
 
-        self.assertEqual("uncertain", result["status"])
+        self.assertEqual("decided", result["status"])
         self.assertFalse(result["auto_apply"])
 
     def test_timeout_environment_override_is_accepted(self):
         self.install_cmd(response=self.valid_response())
-        env = dict(self.env, JEVCTL_TIMEOUT="2")
+        env = dict(self.env, JEVCTL_TIMEOUT="2", JEVCTL_ENABLED="1")
 
         result = self.parse_single_json(
             self.run_jevctl("completion-gate", self.gate_input(), env=env)
