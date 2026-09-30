@@ -621,6 +621,36 @@ Jev cannot override deterministic failures, policy, or this skill's invariants.
 If Jev is unavailable, invalid, uncertain, or disabled, continue the existing
 workflow conservatively; removing it leaves orchestration behavior unchanged.
 
+
+#### Shadow mode
+
+In enabled `shadow` mode, work, review, and verify normally, then decide the next
+action without consulting Jev. Invoke Jev at most once per eligible decision,
+and only when the gate would genuinely run; never on deterministic failure,
+incomplete review, or an unsafe payload. Record `action_match` and
+`completion_match`, then continue with the original decision. **The Jev result MUST NOT cause the Orchestrator to
+revise the decision in shadow mode.** Report unavailable Jev concisely without
+failing the task.
+
+Use this report template:
+
+```text
+## Jev Shadow
+Orchestrator decision: <action>
+Jev status: <status>
+Jev action: <action>
+next_action_confidence: <value>
+outcome_supported: <value>
+unresolved_issue: <value>
+scope_exceeded: <value>
+completion_confidence: <value>
+would_auto_apply: <bool>
+auto_apply: false
+Agreement:
+action_match: (orchestrator_action==jev_action)
+completion_match: ((both complete) or (both not complete))
+```
+
 On normal completion:
 
 - complete the Harvest objective lifecycle in [`HARVEST.md`](references/HARVEST.md),

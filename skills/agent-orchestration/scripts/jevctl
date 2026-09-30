@@ -12,6 +12,7 @@ from pathlib import Path
 
 DEFAULT_MODEL = "typesafe/jev"
 DEFAULT_TRANSPORT = "cmd"
+DEFAULT_MODE = "active"
 DEFAULT_TIMEOUT = 60.0
 DEFAULT_MAX_STATE_CHARS = 12000
 DEFAULT_THRESHOLDS = {
@@ -20,7 +21,7 @@ DEFAULT_THRESHOLDS = {
     "scope_max": 0.15,
     "action_conf_min": 0.80,
 }
-CONFIG_KEYS = {"model", "transport", "timeout", "thresholds", "enabled"}
+CONFIG_KEYS = {"model", "transport", "timeout", "thresholds", "enabled", "mode"}
 THRESHOLD_ENV = {
     "outcome_min": "JEVCTL_OUTCOME_MIN",
     "unresolved_max": "JEVCTL_UNRESOLVED_MAX",
@@ -128,6 +129,14 @@ def parse_enabled(value):
     raise JevctlError("invalid_config")
 
 
+def parse_mode(value):
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in ("shadow", "active"):
+            return normalized
+    raise JevctlError("invalid_config")
+
+
 def load_settings():
     config = {}
     path = config_file_path()
@@ -148,6 +157,7 @@ def load_settings():
         "timeout": config.get("timeout", DEFAULT_TIMEOUT),
         "thresholds": dict(DEFAULT_THRESHOLDS),
         "enabled": False,
+        "mode": config.get("mode", DEFAULT_MODE),
     }
     configured_thresholds = config.get("thresholds", {})
     if not isinstance(configured_thresholds, dict) or not set(configured_thresholds).issubset(
@@ -161,6 +171,7 @@ def load_settings():
     env_settings = {
         "model": "JEVCTL_MODEL",
         "transport": "JEVCTL_TRANSPORT",
+        "mode": "JEVCTL_MODE",
     }
     for setting, env_name in env_settings.items():
         if env_name in os.environ:
@@ -172,6 +183,7 @@ def load_settings():
         settings["enabled"] = parse_enabled(os.environ["JEVCTL_ENABLED"])
     elif "enabled" in config:
         settings["enabled"] = parse_enabled(config["enabled"])
+    settings["mode"] = parse_mode(settings["mode"])
 
     if not isinstance(settings["model"], str) or not settings["model"].strip():
         raise JevctlError("invalid_config")
@@ -240,6 +252,7 @@ def doctor_result():
             "model": DEFAULT_MODEL,
             "transport": DEFAULT_TRANSPORT,
             "enabled": False,
+            "mode": DEFAULT_MODE,
             "reason": error.reason,
         }
 
@@ -249,6 +262,7 @@ def doctor_result():
             "model": settings["model"],
             "transport": settings["transport"],
             "enabled": False,
+            "mode": settings["mode"],
             "reason": "disabled",
         }
     if settings["transport"] == "provider":
@@ -257,6 +271,7 @@ def doctor_result():
             "model": settings["model"],
             "transport": settings["transport"],
             "enabled": True,
+            "mode": settings["mode"],
             "reason": "provider_not_implemented",
         }
     try:
@@ -267,6 +282,7 @@ def doctor_result():
             "model": settings["model"],
             "transport": settings["transport"],
             "enabled": True,
+            "mode": settings["mode"],
             "reason": error.reason,
         }
     return {
@@ -274,6 +290,7 @@ def doctor_result():
         "model": settings["model"],
         "transport": settings["transport"],
         "enabled": True,
+        "mode": settings["mode"],
         "cmd_path": command_path,
     }
 
@@ -500,13 +517,15 @@ def validate_response(response, model):
     return values, action, confidence
 
 
-def unavailable_result(reason):
+def unavailable_result(reason, mode=DEFAULT_MODE):
     return {
         "schema_version": 1,
         "gate": "completion",
         "status": "unavailable",
         "action": "orchestrator_review",
         "auto_apply": False,
+        "would_auto_apply": False,
+        "mode": mode,
         "completion_confidence": 0.0,
         "answers": {answer_id: None for answer_id in ANSWER_IDS},
         "next_action": "orchestrator_review",
@@ -516,17 +535,19 @@ def unavailable_result(reason):
 
 
 def completion_result():
+    mode = DEFAULT_MODE
     try:
         settings = load_settings()
+        mode = settings["mode"]
         if not settings["enabled"]:
-            return unavailable_result("disabled")
+            return unavailable_result("disabled", mode)
         try:
             data = parse_json(sys.stdin.read())
         except (ValueError, TypeError, RecursionError):
             raise JevctlError("invalid_request") from None
         summary = validate_gate_input(data)
         if not data["deterministic_pass"]:
-            return unavailable_result("deterministic_failure")
+            return unavailable_result("deterministic_failure", mode)
         request = {
             "state": make_state(summary, settings["max_state_chars"]),
             "questions": build_questions(),
@@ -537,9 +558,13 @@ def completion_result():
             response = provider_transport(request, settings["model"], settings["timeout"])
         values, action, confidence = validate_response(response, settings["model"])
     except JevctlError as error:
-        return unavailable_result(error.reason)
+        return unavailable_result(error.reason, mode)
     except (OSError, UnicodeError, ValueError, TypeError, RecursionError):
-        return unavailable_result("invalid_response")
+        return unavailable_result("invalid_response", mode)
+    except KeyboardInterrupt:
+        return unavailable_result("interrupted", mode)
+    except Exception:
+        return unavailable_result("transport_error", mode)
 
     thresholds = settings["thresholds"]
     completion_eligible = (
@@ -554,18 +579,21 @@ def completion_result():
         1.0 - values["scope_exceeded"],
         confidence,
     )
-    auto_apply = bool(
+    active_calc = bool(
         data["deterministic_pass"]
         and status == "decided"
         and action == "complete"
         and completion_eligible
     )
+    auto_apply = active_calc if mode == "active" else False
     return {
         "schema_version": 1,
         "gate": "completion",
         "status": status,
         "action": action,
         "auto_apply": auto_apply,
+        "would_auto_apply": active_calc,
+        "mode": mode,
         "completion_confidence": completion_confidence,
         "answers": values,
         "next_action": action,
@@ -590,6 +618,7 @@ def main(argv):
                 "model": DEFAULT_MODEL,
                 "transport": DEFAULT_TRANSPORT,
                 "enabled": False,
+                "mode": DEFAULT_MODE,
                 "reason": "interrupted",
             }
         except Exception:
@@ -598,6 +627,7 @@ def main(argv):
                 "model": DEFAULT_MODEL,
                 "transport": DEFAULT_TRANSPORT,
                 "enabled": False,
+                "mode": DEFAULT_MODE,
                 "reason": "transport_error",
             }
         if not result["ok"]:

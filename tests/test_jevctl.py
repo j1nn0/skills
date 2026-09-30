@@ -27,6 +27,7 @@ class JevctlTest(unittest.TestCase):
         self.env.pop("JEVCTL_MODEL", None)
         self.env.pop("JEVCTL_TRANSPORT", None)
         self.env.pop("JEVCTL_ENABLED", None)
+        self.env.pop("JEVCTL_MODE", None)
         self.env.pop("CMD_ZDR", None)
         self.env.pop("JEVCTL_TIMEOUT", None)
         self.env.pop("JEVCTL_MAX_STATE_CHARS", None)
@@ -128,10 +129,12 @@ class JevctlTest(unittest.TestCase):
             check=False,
         )
 
-    def run_gate(self, response=None, **kwargs):
+    def run_gate(self, response=None, mode=None, **kwargs):
         self.install_cmd(response=response)
         payload = self.gate_input(**kwargs)
         env = dict(self.env, JEVCTL_ENABLED="1")
+        if mode is not None:
+            env["JEVCTL_MODE"] = mode
         return self.run_jevctl("completion-gate", payload, env=env)
 
     def parse_single_json(self, completed):
@@ -146,6 +149,8 @@ class JevctlTest(unittest.TestCase):
         self.assertEqual("decided", result["status"])
         self.assertEqual("complete", result["action"])
         self.assertTrue(result["auto_apply"])
+        self.assertEqual("active", result["mode"])
+        self.assertEqual(result["auto_apply"], result["would_auto_apply"])
         self.assertAlmostEqual(0.95, result["completion_confidence"])
         self.assertNotIn("certainty", result)
 
@@ -174,6 +179,7 @@ class JevctlTest(unittest.TestCase):
         self.assertEqual("decided", result["status"])
         self.assertEqual("retry_fix", result["action"])
         self.assertFalse(result["auto_apply"])
+        self.assertEqual(result["auto_apply"], result["would_auto_apply"])
 
     def test_high_confidence_reinvestigate_is_decided_without_auto_apply(self):
         result = self.parse_single_json(
@@ -182,6 +188,7 @@ class JevctlTest(unittest.TestCase):
 
         self.assertEqual("decided", result["status"])
         self.assertEqual("reinvestigate", result["action"])
+        self.assertFalse(result["would_auto_apply"])
         self.assertFalse(result["auto_apply"])
 
     def test_low_choice_confidence_is_uncertain(self):
@@ -189,6 +196,8 @@ class JevctlTest(unittest.TestCase):
 
         self.assertEqual("uncertain", result["status"])
         self.assertAlmostEqual(0.79, result["completion_confidence"])
+        self.assertIn("would_auto_apply", result)
+        self.assertFalse(result["would_auto_apply"])
         self.assertFalse(result["auto_apply"])
 
     def test_malformed_response_falls_back_to_unavailable(self):
@@ -257,6 +266,7 @@ class JevctlTest(unittest.TestCase):
         self.assertFalse(gate_result["auto_apply"])
         self.assertFalse(doctor_result["ok"])
         self.assertTrue(doctor_result["enabled"])
+        self.assertEqual("active", doctor_result["mode"])
         self.assertEqual("missing_command", doctor_result["reason"])
 
     def test_doctor_success_and_smoke_probe_failure_are_json(self):
@@ -267,12 +277,14 @@ class JevctlTest(unittest.TestCase):
         self.assertEqual("typesafe/jev", success["model"])
         self.assertEqual("cmd", success["transport"])
         self.assertTrue(success["enabled"])
+        self.assertEqual("active", success["mode"])
         self.assertIn("cmd_path", success)
 
         self.install_cmd(version_code=1)
         failure = self.parse_single_json(self.run_jevctl("doctor", env=env))
         self.assertFalse(failure["ok"])
         self.assertTrue(failure["enabled"])
+        self.assertEqual("active", failure["mode"])
         self.assertEqual("transport_error", failure["reason"])
 
     def test_stdout_is_one_json_object_and_stderr_holds_diagnostic(self):
@@ -295,6 +307,7 @@ class JevctlTest(unittest.TestCase):
 
         self.assertFalse(doctor["ok"])
         self.assertFalse(doctor["enabled"])
+        self.assertEqual("active", doctor["mode"])
         self.assertEqual("disabled", doctor["reason"])
         self.assertFalse(marker.exists())
 
@@ -392,7 +405,7 @@ class JevctlTest(unittest.TestCase):
     def test_deterministic_failure_short_circuits_without_cmd(self):
         marker = self.root / "invoked"
         self.install_cmd(response=self.valid_response(), invocation_marker=marker)
-        env = dict(self.env, JEVCTL_ENABLED="1")
+        env = dict(self.env, JEVCTL_ENABLED="1", JEVCTL_MODE="shadow")
 
         result = self.parse_single_json(
             self.run_jevctl(
@@ -406,6 +419,8 @@ class JevctlTest(unittest.TestCase):
         self.assertEqual("deterministic_failure", result["reason"])
         self.assertEqual("orchestrator_review", result["action"])
         self.assertFalse(result["auto_apply"])
+        self.assertFalse(result["would_auto_apply"])
+        self.assertEqual("shadow", result["mode"])
         self.assertEqual(0.0, result["completion_confidence"])
         self.assertFalse(marker.exists())
 
@@ -432,6 +447,7 @@ class JevctlTest(unittest.TestCase):
         config_result = self.run_jevctl("doctor", env=env)
         config_payload = self.parse_single_json(config_result)
         self.assertFalse(config_payload["ok"])
+        self.assertEqual("active", config_payload["mode"])
         self.assertNotIn(fake_secret, config_result.stdout)
         self.assertNotIn(fake_secret, config_result.stderr)
 
@@ -441,6 +457,7 @@ class JevctlTest(unittest.TestCase):
 
         result = self.parse_single_json(completed)
         self.assertTrue(result["auto_apply"])
+        self.assertEqual(result["auto_apply"], result["would_auto_apply"])
         self.assertNotIn(fake_secret, completed.stdout)
         self.assertNotIn(fake_secret, completed.stderr)
 
@@ -492,6 +509,123 @@ class JevctlTest(unittest.TestCase):
                     yield from keys_in(child)
 
         self.assertFalse({"id", "question", "options"}.intersection(keys_in(request)))
+
+    def test_shadow_config_reports_would_apply_without_applying(self):
+        self.install_cmd(response=self.valid_response())
+        self.config_path.write_text(
+            json.dumps({"enabled": True, "mode": "shadow"}), encoding="utf-8"
+        )
+        result = self.parse_single_json(
+            self.run_jevctl("completion-gate", self.gate_input())
+        )
+
+        self.assertEqual("shadow", result["mode"])
+        self.assertTrue(result["would_auto_apply"])
+        self.assertFalse(result["auto_apply"])
+
+    def test_active_mode_config_preserves_active_behavior(self):
+        self.install_cmd(response=self.valid_response())
+        self.config_path.write_text(
+            json.dumps({"enabled": True, "mode": "active"}), encoding="utf-8"
+        )
+        result = self.parse_single_json(
+            self.run_jevctl("completion-gate", self.gate_input())
+        )
+
+        self.assertEqual("active", result["mode"])
+        self.assertTrue(result["would_auto_apply"])
+        self.assertEqual(result["would_auto_apply"], result["auto_apply"])
+
+    def test_mode_environment_overrides_config_in_both_directions(self):
+        self.config_path.write_text(
+            json.dumps({"enabled": True, "mode": "shadow"}), encoding="utf-8"
+        )
+        active = self.parse_single_json(
+            self.run_gate(self.valid_response(), mode=" ACTIVE ")
+        )
+        self.assertEqual("active", active["mode"])
+        self.assertTrue(active["auto_apply"])
+
+        self.config_path.write_text(
+            json.dumps({"enabled": True, "mode": "active"}), encoding="utf-8"
+        )
+        shadow = self.parse_single_json(
+            self.run_gate(self.valid_response(), mode="ShAdOw")
+        )
+        self.assertEqual("shadow", shadow["mode"])
+        self.assertTrue(shadow["would_auto_apply"])
+        self.assertFalse(shadow["auto_apply"])
+
+    def test_invalid_modes_fail_conservatively_without_spawning_cmd(self):
+        marker = self.root / "invoked"
+        self.install_cmd(response=self.valid_response(), invocation_marker=marker)
+        for value in ("observe", "test", "on", "true", "production", "", "2"):
+            with self.subTest(value=value):
+                env = dict(self.env, JEVCTL_ENABLED="1", JEVCTL_MODE=value)
+                result = self.parse_single_json(
+                    self.run_jevctl("completion-gate", self.gate_input(), env=env)
+                )
+                self.assertEqual("unavailable", result["status"])
+                self.assertEqual("invalid_config", result["reason"])
+                self.assertEqual("active", result["mode"])
+                self.assertFalse(result["would_auto_apply"])
+                self.assertFalse(result["auto_apply"])
+                self.assertFalse(marker.exists())
+
+        self.config_path.write_text(
+            json.dumps({"enabled": True, "mode": "observe"}), encoding="utf-8"
+        )
+        invalid_config = self.parse_single_json(
+            self.run_jevctl("completion-gate", self.gate_input())
+        )
+        self.assertEqual("invalid_config", invalid_config["reason"])
+        self.assertEqual("active", invalid_config["mode"])
+        self.assertFalse(marker.exists())
+
+    def test_disabled_shadow_config_short_circuits_and_reports_mode(self):
+        self.config_path.write_text(
+            json.dumps({"enabled": False, "mode": "shadow"}), encoding="utf-8"
+        )
+        marker = self.root / "invoked"
+        self.install_cmd(response=self.valid_response(), invocation_marker=marker)
+
+        doctor = self.parse_single_json(self.run_jevctl("doctor"))
+        result = self.parse_single_json(
+            self.run_jevctl("completion-gate", self.gate_input())
+        )
+
+        self.assertFalse(doctor["ok"])
+        self.assertFalse(doctor["enabled"])
+        self.assertEqual("shadow", doctor["mode"])
+        self.assertEqual("disabled", doctor["reason"])
+        self.assertEqual("shadow", result["mode"])
+        self.assertEqual("disabled", result["reason"])
+        self.assertFalse(result["would_auto_apply"])
+        self.assertFalse(result["auto_apply"])
+        self.assertFalse(marker.exists())
+
+    def test_shadow_retry_fix_never_applies_but_reports_would_apply_false(self):
+        result = self.parse_single_json(
+            self.run_gate(self.valid_response(action="retry_fix"), mode="shadow")
+        )
+
+        self.assertEqual("decided", result["status"])
+        self.assertEqual("retry_fix", result["action"])
+        self.assertFalse(result["would_auto_apply"])
+        self.assertFalse(result["auto_apply"])
+
+    def test_shadow_unavailable_reports_both_apply_fields_false(self):
+        self.install_cmd(raw_stdout="not-json")
+        env = dict(self.env, JEVCTL_ENABLED="1", JEVCTL_MODE="shadow")
+
+        result = self.parse_single_json(
+            self.run_jevctl("completion-gate", self.gate_input(), env=env)
+        )
+
+        self.assertEqual("shadow", result["mode"])
+        self.assertEqual("unavailable", result["status"])
+        self.assertFalse(result["would_auto_apply"])
+        self.assertFalse(result["auto_apply"])
 
     def test_threshold_environment_override_is_accepted(self):
         self.install_cmd(response=self.valid_response(outcome=0.97))
