@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Optional Jev completion gate for the agent-orchestration skill."""
+"""Optional Jev gates for the agent-orchestration skill."""
 
 import json
 import math
@@ -21,7 +21,7 @@ DEFAULT_THRESHOLDS = {
     "scope_max": 0.15,
     "action_conf_min": 0.80,
 }
-CONFIG_KEYS = {"model", "transport", "timeout", "thresholds", "enabled", "mode"}
+CONFIG_KEYS = {"model", "transport", "timeout", "thresholds", "enabled", "mode", "gates"}
 THRESHOLD_ENV = {
     "outcome_min": "JEVCTL_OUTCOME_MIN",
     "unresolved_max": "JEVCTL_UNRESOLVED_MAX",
@@ -35,6 +35,39 @@ ALLOWED_ACTIONS = (
     "orchestrator_review",
 )
 ANSWER_IDS = ("outcome_supported", "unresolved_issue", "scope_exceeded")
+EXPLORER_ALLOWED_ACTIONS = ("proceed_to_fix", "explore_more", "orchestrator_review")
+EXPLORER_ANSWER_IDS = ("evidence_grounded", "claim_supported", "material_gap")
+EXPLORER_DEFAULT_THRESHOLDS = {
+    "grounded_min": 0.75,
+    "supported_min": 0.75,
+    "material_gap_max": 0.20,
+    "action_conf_min": 0.75,
+}
+GATE_CONFIG_KEYS = {"enabled", "mode", "thresholds"}
+EXPLORER_FORBIDDEN_KEYS = {
+    "transcript",
+    "raw_transcript",
+    "agent_transcript",
+    "source_files",
+    "full_source",
+    "repository_dump",
+    "orchestrator_decision",
+    "intended_action",
+    "tentative_action",
+    "retry_count",
+    "retry_counter",
+    "loop_count",
+    "loop_counter",
+    "round_count",
+    "attempt_count",
+    "harness",
+    "model",
+    "effort",
+    "prompt",
+    "prompts",
+    "harvest_id",
+    "orchestration_id",
+}
 TRUNCATION_MARKER = "[state truncated]"
 EXIT_CODE_REASONS = {
     3: "auth_error",
@@ -47,7 +80,7 @@ EXIT_CODE_REASONS = {
     10: "insufficient_credits",
     130: "interrupted",
 }
-USAGE = "usage: jevctl {doctor|completion-gate}"
+USAGE = "usage: jevctl {doctor|completion-gate|explorer-gate}"
 
 
 class JevctlError(Exception):
@@ -151,6 +184,20 @@ def load_settings():
     except (OSError, UnicodeError, ValueError, RecursionError):
         raise JevctlError("invalid_config") from None
 
+    configured_gates = config.get("gates", {})
+    if not isinstance(configured_gates, dict) or not set(configured_gates).issubset(
+        {"completion", "explorer"}
+    ):
+        raise JevctlError("invalid_config")
+    gate_configs = {}
+    for gate_name in ("completion", "explorer"):
+        gate_config = configured_gates.get(gate_name, {})
+        if not isinstance(gate_config, dict) or not set(gate_config).issubset(
+            GATE_CONFIG_KEYS
+        ):
+            raise JevctlError("invalid_config")
+        gate_configs[gate_name] = gate_config
+
     settings = {
         "model": config.get("model", DEFAULT_MODEL),
         "transport": config.get("transport", DEFAULT_TRANSPORT),
@@ -168,6 +215,24 @@ def load_settings():
         if key in configured_thresholds:
             settings["thresholds"][key] = parse_probability(configured_thresholds[key])
 
+    # Gate-specific completion thresholds override the shared legacy thresholds.
+    configured_completion_thresholds = gate_configs["completion"].get("thresholds", {})
+    if not isinstance(configured_completion_thresholds, dict) or not set(
+        configured_completion_thresholds
+    ).issubset(DEFAULT_THRESHOLDS):
+        raise JevctlError("invalid_config")
+    for key, value in configured_completion_thresholds.items():
+        settings["thresholds"][key] = parse_probability(value)
+
+    explorer_thresholds = dict(EXPLORER_DEFAULT_THRESHOLDS)
+    configured_explorer_thresholds = gate_configs["explorer"].get("thresholds", {})
+    if not isinstance(configured_explorer_thresholds, dict) or not set(
+        configured_explorer_thresholds
+    ).issubset(EXPLORER_DEFAULT_THRESHOLDS):
+        raise JevctlError("invalid_config")
+    for key, value in configured_explorer_thresholds.items():
+        explorer_thresholds[key] = parse_probability(value)
+
     env_settings = {
         "model": "JEVCTL_MODEL",
         "transport": "JEVCTL_TRANSPORT",
@@ -184,6 +249,28 @@ def load_settings():
     elif "enabled" in config:
         settings["enabled"] = parse_enabled(config["enabled"])
     settings["mode"] = parse_mode(settings["mode"])
+    global_enabled = settings["enabled"]
+    global_mode = settings["mode"]
+
+    completion_gate_config = gate_configs["completion"]
+    if "enabled" in completion_gate_config:
+        completion_gate_enabled = parse_enabled(completion_gate_config["enabled"])
+    else:
+        completion_gate_enabled = True
+    completion_enabled = global_enabled and completion_gate_enabled
+    completion_mode = parse_mode(completion_gate_config.get("mode", global_mode))
+
+    explorer_gate_config = gate_configs["explorer"]
+    if "JEVCTL_EXPLORER_ENABLED" in os.environ:
+        explorer_gate_enabled = parse_enabled(os.environ["JEVCTL_EXPLORER_ENABLED"])
+    else:
+        explorer_gate_enabled = parse_enabled(explorer_gate_config.get("enabled", False))
+    explorer_enabled = global_enabled and explorer_gate_enabled
+    if "JEVCTL_EXPLORER_MODE" in os.environ:
+        explorer_mode_value = os.environ["JEVCTL_EXPLORER_MODE"]
+    else:
+        explorer_mode_value = explorer_gate_config.get("mode", "shadow")
+    explorer_mode = parse_mode(explorer_mode_value)
 
     if not isinstance(settings["model"], str) or not settings["model"].strip():
         raise JevctlError("invalid_config")
@@ -206,6 +293,16 @@ def load_settings():
     else:
         state_cap = DEFAULT_MAX_STATE_CHARS
     settings["max_state_chars"] = state_cap
+    settings["enabled"] = completion_enabled
+    settings["mode"] = completion_mode
+    settings["gates"] = {
+        "completion": {"enabled": completion_enabled, "mode": completion_mode},
+        "explorer": {
+            "enabled": explorer_enabled,
+            "mode": explorer_mode,
+            "thresholds": explorer_thresholds,
+        },
+    }
     return settings
 
 
@@ -243,6 +340,16 @@ def run_cmd_smoke(timeout):
     return command_path
 
 
+def doctor_gates(settings):
+    return {
+        gate_name: {
+            "enabled": gate_settings["enabled"],
+            "mode": gate_settings["mode"],
+        }
+        for gate_name, gate_settings in settings["gates"].items()
+    }
+
+
 def doctor_result():
     try:
         settings = load_settings()
@@ -255,7 +362,6 @@ def doctor_result():
             "mode": DEFAULT_MODE,
             "reason": error.reason,
         }
-
     if not settings["enabled"]:
         return {
             "ok": False,
@@ -263,6 +369,7 @@ def doctor_result():
             "transport": settings["transport"],
             "enabled": False,
             "mode": settings["mode"],
+            "gates": doctor_gates(settings),
             "reason": "disabled",
         }
     if settings["transport"] == "provider":
@@ -272,6 +379,7 @@ def doctor_result():
             "transport": settings["transport"],
             "enabled": True,
             "mode": settings["mode"],
+            "gates": doctor_gates(settings),
             "reason": "provider_not_implemented",
         }
     try:
@@ -283,6 +391,7 @@ def doctor_result():
             "transport": settings["transport"],
             "enabled": True,
             "mode": settings["mode"],
+            "gates": doctor_gates(settings),
             "reason": error.reason,
         }
     return {
@@ -291,6 +400,7 @@ def doctor_result():
         "transport": settings["transport"],
         "enabled": True,
         "mode": settings["mode"],
+        "gates": doctor_gates(settings),
         "cmd_path": command_path,
     }
 
@@ -369,6 +479,87 @@ def validate_gate_input(data):
     return summary
 
 
+
+def nonempty_string(value):
+    return isinstance(value, str) and bool(value.strip())
+
+
+def validate_evidence_items(value, allow_empty):
+    if not isinstance(value, list) or (not allow_empty and not value):
+        raise JevctlError("invalid_request")
+    items = []
+    for item in value:
+        if (
+            not isinstance(item, dict)
+            or not {"source", "observation"}.issubset(item)
+            or not nonempty_string(item["source"])
+            or not nonempty_string(item["observation"])
+        ):
+            raise JevctlError("invalid_request")
+        items.append({"source": item["source"], "observation": item["observation"]})
+    return items
+
+
+def validate_explorer_input(data):
+    if not isinstance(data, dict) or EXPLORER_FORBIDDEN_KEYS.intersection(data):
+        raise JevctlError("invalid_request")
+    required = {
+        "task_summary",
+        "investigation_goal",
+        "explorer_claim",
+        "evidence_supporting_claim",
+        "contradictory_evidence",
+        "remaining_unknowns",
+    }
+    if not required.issubset(data):
+        raise JevctlError("invalid_request")
+    for key in ("task_summary", "investigation_goal", "explorer_claim"):
+        if not nonempty_string(data[key]):
+            raise JevctlError("invalid_request")
+
+    supporting = validate_evidence_items(data["evidence_supporting_claim"], allow_empty=False)
+    contradictory = validate_evidence_items(data["contradictory_evidence"], allow_empty=True)
+    unknowns = data["remaining_unknowns"]
+    if not isinstance(unknowns, list) or not all(nonempty_string(item) for item in unknowns):
+        raise JevctlError("invalid_request")
+    if "orchestrator_reviewed" in data and not isinstance(data["orchestrator_reviewed"], bool):
+        raise JevctlError("invalid_request")
+
+    summary = {
+        "task_summary": data["task_summary"],
+        "investigation_goal": data["investigation_goal"],
+        "explorer_claim": data["explorer_claim"],
+        "evidence_supporting_claim": supporting,
+        "contradictory_evidence": contradictory,
+        "remaining_unknowns": unknowns,
+    }
+    if "orchestrator_reviewed" in data:
+        summary["orchestrator_reviewed"] = data["orchestrator_reviewed"]
+    for key in ("files_examined", "tests_examined", "external_sources"):
+        if key in data:
+            values = data[key]
+            if not isinstance(values, list) or not all(nonempty_string(item) for item in values):
+                raise JevctlError("invalid_request")
+            summary[key] = values
+    if "explorer_confidence" in data:
+        confidence = data["explorer_confidence"]
+        if (
+            not isinstance(confidence, dict)
+            or set(confidence) != {"level", "reason"}
+            or not isinstance(confidence["level"], str)
+            or confidence["level"] not in {"high", "medium", "low"}
+            or not nonempty_string(confidence["reason"])
+        ):
+            raise JevctlError("invalid_request")
+        summary["explorer_confidence"] = {
+            "level": confidence["level"],
+            "reason": confidence["reason"],
+        }
+    if not is_valid_json_value(summary):
+        raise JevctlError("invalid_request")
+    return summary
+
+
 def make_state(summary, char_cap):
     compact = json.dumps(
         summary,
@@ -423,6 +614,64 @@ def build_questions():
         },
     }
 
+
+
+def build_explorer_questions():
+    evidence_instructions = (
+        "Judge the evidence itself, not the explorer's confidence or assertive wording. "
+        "Do not accept phrases such as 'root cause confirmed', 'definitely caused by', "
+        "or 'fully verified' unless the cited observations support them."
+    )
+    return {
+        "evidence_grounded": {
+            "type": "noul",
+            "instructions": (
+                "Estimate the probability that the explorer's claim is grounded in the "
+                "listed, traceable observations. " + evidence_instructions
+            ),
+            "criteria": {
+                "true": "Supporting observations cite concrete sources and directly bear on the claim.",
+                "false": "The claim rests mainly on inference, assertion, or evidence that cannot be traced to an observation.",
+            },
+        },
+        "claim_supported": {
+            "type": "noul",
+            "instructions": (
+                "Estimate the probability that the listed evidence supports the specific "
+                "explorer_claim rather than merely being consistent with it. "
+                + evidence_instructions
+            ),
+            "criteria": {
+                "true": "The observations substantiate the claim and distinguish it from plausible alternatives.",
+                "false": "The observations do not establish the claim, or plausible alternatives remain equally supported.",
+            },
+        },
+        "material_gap": {
+            "type": "noul",
+            "instructions": (
+                "Estimate the probability that contradictory evidence or a remaining "
+                "unknown materially limits the claim or a safe next step. " + evidence_instructions
+            ),
+            "criteria": {
+                "true": "A material contradiction or unresolved factual gap could change the conclusion or safe strategy.",
+                "false": "No listed contradiction or unknown materially affects the supported conclusion or next step.",
+            },
+        },
+        "next_step": {
+            "type": "choice",
+            "instructions": (
+                "Choose the single appropriate next step from the settled evidence. "
+                "This is a recommendation only: it does not authorize implementation or "
+                "replace orchestrator judgment. " + evidence_instructions
+            ),
+            "criteria": {
+                "proceed_to_fix": "The evidence supports a bounded strategy strongly enough for the orchestrator to consider a fixer handoff.",
+                "explore_more": "A focused investigation could resolve a material contradiction, unknown, or unsupported claim.",
+                "orchestrator_review": "Evidence is conflicting, untraceable, consequential, or requires the orchestrator's judgment.",
+            },
+        },
+    }
+
 def cmd_transport(request, model, timeout):
     command_path = shutil.which("cmd")
     if command_path is None:
@@ -456,7 +705,7 @@ def provider_transport(_request, _model, _timeout):
     raise JevctlError("provider_not_implemented")
 
 
-def validate_response(response, model):
+def validate_choice_response(response, model, answer_ids, allowed_actions, choice_id):
     required_response_fields = {"model", "answers", "usage"}
     if not isinstance(response, dict) or not required_response_fields.issubset(response):
         raise JevctlError("invalid_response")
@@ -475,12 +724,12 @@ def validate_response(response, model):
         raise JevctlError("invalid_response")
 
     answers = response["answers"]
-    required_answer_ids = set(ANSWER_IDS) | {"next_action"}
+    required_answer_ids = set(answer_ids) | {choice_id}
     if not isinstance(answers, dict) or not required_answer_ids.issubset(answers):
         raise JevctlError("invalid_response")
 
     values = {}
-    for answer_id in ANSWER_IDS:
+    for answer_id in answer_ids:
         answer = answers[answer_id]
         if not isinstance(answer, dict) or not {"type", "noul"}.issubset(answer):
             raise JevctlError("invalid_response")
@@ -491,14 +740,14 @@ def validate_response(response, model):
         except JevctlError:
             raise JevctlError("invalid_response") from None
 
-    action_answer = answers["next_action"]
+    action_answer = answers[choice_id]
     required_choice_fields = {"type", "choice", "confidence", "probabilities"}
     if not isinstance(action_answer, dict) or not required_choice_fields.issubset(action_answer):
         raise JevctlError("invalid_response")
     if action_answer["type"] != "choice":
         raise JevctlError("invalid_response")
     action = action_answer["choice"]
-    if not isinstance(action, str) or action not in ALLOWED_ACTIONS:
+    if not isinstance(action, str) or action not in allowed_actions:
         raise JevctlError("invalid_response")
     try:
         confidence = parse_probability(action_answer["confidence"])
@@ -506,7 +755,7 @@ def validate_response(response, model):
         raise JevctlError("invalid_response") from None
     probabilities = action_answer["probabilities"]
     if not isinstance(probabilities, dict) or any(
-        not isinstance(option, str) or option not in ALLOWED_ACTIONS for option in probabilities
+        not isinstance(option, str) or option not in allowed_actions for option in probabilities
     ):
         raise JevctlError("invalid_response")
     try:
@@ -517,21 +766,45 @@ def validate_response(response, model):
     return values, action, confidence
 
 
-def unavailable_result(reason, mode=DEFAULT_MODE):
+def validate_response(response, model):
+    return validate_choice_response(response, model, ANSWER_IDS, ALLOWED_ACTIONS, "next_action")
+
+
+def gate_unavailable_result(gate, reason, mode, answer_ids, confidence_field):
+    if gate == "completion":
+        return {
+            "schema_version": 1,
+            "gate": "completion",
+            "status": "unavailable",
+            "action": "orchestrator_review",
+            "auto_apply": False,
+            "would_auto_apply": False,
+            "mode": mode,
+            confidence_field: 0.0,
+            "answers": {answer_id: None for answer_id in answer_ids},
+            "next_action": "orchestrator_review",
+            "next_action_confidence": 0.0,
+            "reason": reason,
+        }
     return {
         "schema_version": 1,
-        "gate": "completion",
+        "gate": "explorer",
         "status": "unavailable",
         "action": "orchestrator_review",
         "auto_apply": False,
-        "would_auto_apply": False,
+        "would_block": False,
         "mode": mode,
-        "completion_confidence": 0.0,
-        "answers": {answer_id: None for answer_id in ANSWER_IDS},
-        "next_action": "orchestrator_review",
-        "next_action_confidence": 0.0,
+        "answers": {answer_id: None for answer_id in answer_ids},
+        "next_step": "orchestrator_review",
+        "next_step_confidence": 0.0,
         "reason": reason,
     }
+
+
+def unavailable_result(reason, mode=DEFAULT_MODE):
+    return gate_unavailable_result(
+        "completion", reason, mode, ANSWER_IDS, "completion_confidence"
+    )
 
 
 def completion_result():
@@ -599,12 +872,84 @@ def completion_result():
     }
 
 
+
+def explorer_result():
+    mode = "shadow"
+    try:
+        settings = load_settings()
+        explorer_settings = settings["gates"]["explorer"]
+        mode = explorer_settings["mode"]
+        if not explorer_settings["enabled"]:
+            return gate_unavailable_result(
+                "explorer", "disabled", mode, EXPLORER_ANSWER_IDS, None
+            )
+        try:
+            data = parse_json(sys.stdin.read())
+        except (ValueError, TypeError, RecursionError):
+            raise JevctlError("invalid_request") from None
+        summary = validate_explorer_input(data)
+        if data.get("orchestrator_reviewed") is not True:
+            return gate_unavailable_result(
+                "explorer", "review_incomplete", mode, EXPLORER_ANSWER_IDS, None
+            )
+        request = {
+            "state": make_state(summary, settings["max_state_chars"]),
+            "questions": build_explorer_questions(),
+        }
+        if settings["transport"] == "cmd":
+            response = cmd_transport(request, settings["model"], settings["timeout"])
+        else:
+            response = provider_transport(request, settings["model"], settings["timeout"])
+        values, action, confidence = validate_choice_response(
+            response, settings["model"], EXPLORER_ANSWER_IDS, EXPLORER_ALLOWED_ACTIONS, "next_step"
+        )
+    except JevctlError as error:
+        return gate_unavailable_result(
+            "explorer", error.reason, mode, EXPLORER_ANSWER_IDS, None
+        )
+    except (OSError, UnicodeError, ValueError, TypeError, RecursionError):
+        return gate_unavailable_result(
+            "explorer", "invalid_response", mode, EXPLORER_ANSWER_IDS, None
+        )
+    except KeyboardInterrupt:
+        return gate_unavailable_result(
+            "explorer", "interrupted", mode, EXPLORER_ANSWER_IDS, None
+        )
+
+    thresholds = explorer_settings["thresholds"]
+    confident = confidence >= thresholds["action_conf_min"]
+    status = "decided" if confident else "uncertain"
+    sufficiency = bool(
+        action == "proceed_to_fix"
+        and confident
+        and values["evidence_grounded"] >= thresholds["grounded_min"]
+        and values["claim_supported"] >= thresholds["supported_min"]
+        and values["material_gap"] <= thresholds["material_gap_max"]
+    )
+    would_block = bool(status == "decided" and action == "explore_more" and confident)
+    # Sufficiency is derivable from the returned answers and configured thresholds;
+    # the wire schema intentionally carries those facts rather than a second flag.
+    _ = sufficiency
+    return {
+        "schema_version": 1,
+        "gate": "explorer",
+        "status": status,
+        "action": action,
+        "auto_apply": False,
+        "would_block": would_block,
+        "mode": mode,
+        "answers": values,
+        "next_step": action,
+        "next_step_confidence": confidence,
+    }
+
+
 def emit_json(value):
     print(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
 
 
 def main(argv):
-    if len(argv) != 2 or argv[1] not in ("doctor", "completion-gate"):
+    if len(argv) != 2 or argv[1] not in ("doctor", "completion-gate", "explorer-gate"):
         print(USAGE, file=sys.stderr)
         return 2
     if argv[1] == "doctor":
@@ -623,10 +968,23 @@ def main(argv):
             print("jevctl: " + result["reason"], file=sys.stderr)
         emit_json(result)
         return 0
-    try:
-        result = completion_result()
-    except KeyboardInterrupt:
-        result = unavailable_result("interrupted")
+    if argv[1] == "completion-gate":
+        try:
+            result = completion_result()
+        except KeyboardInterrupt:
+            result = unavailable_result("interrupted")
+    else:
+        mode = "shadow"
+        try:
+            try:
+                mode = load_settings()["gates"]["explorer"]["mode"]
+            except JevctlError:
+                pass
+            result = explorer_result()
+        except KeyboardInterrupt:
+            result = gate_unavailable_result(
+                "explorer", "interrupted", mode, EXPLORER_ANSWER_IDS, None
+            )
     if result["status"] == "unavailable":
         print("jevctl: " + result["reason"], file=sys.stderr)
     emit_json(result)

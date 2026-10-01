@@ -58,5 +58,6 @@ existing `herdr` skill.
 | `references/STARTUP.md` | Persisted session state, pane layout, agent resolution and reuse rules, and per-role harness/model/effort configuration and start commands. |
 | `references/HARVEST.md` | Optional Harvest orchestration identity, objective lifecycle, capability negotiation, runtime locator validation, claim protocol, and graceful degradation. |
 | `references/RECOVERY.md` | Submission failures, timeout, `blocked`, and stuck-agent handling. |
-| `references/JEV.md` | Optional Jev Completion Gate policy, input, thresholds, configuration, and failure behavior. |
-| `scripts/jevctl` | Stdlib-only CLI for the optional Jev completion gate and diagnostic. |
+| `references/JEV.md` | Completion Gate policy, with the multi-gate overview and Explorer Gate pointer. |
+| `references/EXPLORER_GATE.md` | Optional post-Explorer evidence-sufficiency policy, thresholds, conservative action rules, and integration. |
+| `scripts/jevctl` | Stdlib-only CLI for `doctor`, `completion-gate`, and `explorer-gate`; `doctor` makes no model request. |

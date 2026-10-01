@@ -29,6 +29,8 @@ class JevctlTest(unittest.TestCase):
         self.env.pop("JEVCTL_TRANSPORT", None)
         self.env.pop("JEVCTL_ENABLED", None)
         self.env.pop("JEVCTL_MODE", None)
+        self.env.pop("JEVCTL_EXPLORER_ENABLED", None)
+        self.env.pop("JEVCTL_EXPLORER_MODE", None)
         self.env.pop("CMD_ZDR", None)
         self.env.pop("JEVCTL_TIMEOUT", None)
         self.env.pop("JEVCTL_MAX_STATE_CHARS", None)
@@ -728,6 +730,499 @@ class JevctlTest(unittest.TestCase):
             self.assertEqual("interrupted", json.loads(stdout.getvalue())["reason"])
         finally:
             module.doctor_result = original_doctor
+
+
+class ExplorerGateTest(unittest.TestCase):
+    install_cmd = JevctlTest.install_cmd
+    run_jevctl = JevctlTest.run_jevctl
+    parse_single_json = JevctlTest.parse_single_json
+
+    def setUp(self):
+        JevctlTest.setUp(self)
+
+    @staticmethod
+    def explorer_input(**overrides):
+        data = {
+            "task_summary": "Investigate the intermittent order failure.",
+            "investigation_goal": "Determine whether the retry path drops updates.",
+            "explorer_claim": "The retry path omits the version predicate.",
+            "evidence_supporting_claim": [
+                {"source": "src/orders/retry.py:42", "observation": "The update omits expected_version."}
+            ],
+            "contradictory_evidence": [],
+            "remaining_unknowns": [],
+            "orchestrator_reviewed": True,
+        }
+        data.update(overrides)
+        return data
+
+    @staticmethod
+    def explorer_response(
+        grounded=0.95,
+        supported=0.93,
+        gap=0.05,
+        action="proceed_to_fix",
+        confidence=0.95,
+        model="typesafe/jev",
+    ):
+        return {
+            "model": model,
+            "answers": {
+                "evidence_grounded": {"type": "noul", "noul": grounded},
+                "claim_supported": {"type": "noul", "noul": supported},
+                "material_gap": {"type": "noul", "noul": gap},
+                "next_step": {
+                    "type": "choice",
+                    "choice": action,
+                    "confidence": confidence,
+                    "probabilities": {action: confidence},
+                },
+            },
+            "usage": {},
+        }
+
+    def run_explorer(
+        self,
+        response=None,
+        payload=None,
+        env_overrides=None,
+        raw_stdout=None,
+        exit_code=0,
+        invocation_marker=None,
+        capture_path=None,
+    ):
+        self.install_cmd(
+            response=response,
+            raw_stdout=raw_stdout,
+            exit_code=exit_code,
+            invocation_marker=invocation_marker,
+            capture_path=capture_path,
+        )
+        env = dict(self.env, JEVCTL_ENABLED="1", JEVCTL_EXPLORER_ENABLED="1")
+        if env_overrides:
+            env.update(env_overrides)
+        if payload is None:
+            payload = self.explorer_input()
+        return self.run_jevctl("explorer-gate", payload, env=env)
+
+    def test_old_config_without_gates_preserves_completion_behavior(self):
+        self.config_path.write_text(
+            json.dumps({"enabled": True, "mode": "shadow"}), encoding="utf-8"
+        )
+        self.install_cmd(response=JevctlTest.valid_response())
+        result = self.parse_single_json(
+            self.run_jevctl("completion-gate", JevctlTest.gate_input(), env=self.env)
+        )
+        self.assertEqual("shadow", result["mode"])
+        self.assertTrue(result["would_auto_apply"])
+        self.assertFalse(result["auto_apply"])
+
+    def test_explorer_defaults_disabled_and_shadow_mode(self):
+        marker = self.root / "invoked"
+        self.install_cmd(response=self.explorer_response(), invocation_marker=marker)
+        result = self.parse_single_json(
+            self.run_jevctl("explorer-gate", self.explorer_input(), env=self.env)
+        )
+        self.assertEqual("unavailable", result["status"])
+        self.assertEqual("disabled", result["reason"])
+        self.assertEqual("shadow", result["mode"])
+        self.assertFalse(marker.exists())
+
+    def test_global_disabled_forces_explorer_off(self):
+        self.config_path.write_text(
+            json.dumps({
+                "enabled": False,
+                "gates": {"explorer": {"enabled": True, "mode": "active"}},
+            }),
+            encoding="utf-8",
+        )
+        marker = self.root / "invoked"
+        self.install_cmd(response=self.explorer_response(), invocation_marker=marker)
+        result = self.parse_single_json(
+            self.run_jevctl("explorer-gate", self.explorer_input(), env=self.env)
+        )
+        self.assertEqual("disabled", result["reason"])
+        self.assertEqual("active", result["mode"])
+        self.assertFalse(marker.exists())
+
+    def test_gate_specific_disable_short_circuits_without_transport(self):
+        self.config_path.write_text(
+            json.dumps({
+                "enabled": True,
+                "gates": {"explorer": {"enabled": False, "mode": "active"}},
+            }),
+            encoding="utf-8",
+        )
+        marker = self.root / "invoked"
+        self.install_cmd(response=self.explorer_response(), invocation_marker=marker)
+        result = self.parse_single_json(
+            self.run_jevctl("explorer-gate", self.explorer_input(), env=self.env)
+        )
+        self.assertEqual("disabled", result["reason"])
+        self.assertEqual("active", result["mode"])
+        self.assertFalse(marker.exists())
+
+    def test_gate_environment_overrides_config_in_both_directions(self):
+        self.config_path.write_text(
+            json.dumps({
+                "enabled": True,
+                "gates": {"explorer": {"enabled": False, "mode": "active"}},
+            }),
+            encoding="utf-8",
+        )
+        enabled = self.parse_single_json(
+            self.run_explorer(
+                response=self.explorer_response(),
+                env_overrides={
+                    "JEVCTL_EXPLORER_ENABLED": " YES ",
+                    "JEVCTL_EXPLORER_MODE": "shadow",
+                },
+            )
+        )
+        self.assertEqual("decided", enabled["status"])
+        self.assertEqual("shadow", enabled["mode"])
+
+        self.config_path.write_text(
+            json.dumps({
+                "enabled": True,
+                "gates": {"explorer": {"enabled": True, "mode": "shadow"}},
+            }),
+            encoding="utf-8",
+        )
+        marker = self.root / "env-disabled"
+        disabled = self.parse_single_json(
+            self.run_explorer(
+                response=self.explorer_response(),
+                env_overrides={
+                    "JEVCTL_EXPLORER_ENABLED": "OFF",
+                    "JEVCTL_EXPLORER_MODE": "active",
+                },
+                invocation_marker=marker,
+            )
+        )
+        self.assertEqual("disabled", disabled["reason"])
+        self.assertEqual("active", disabled["mode"])
+        self.assertFalse(marker.exists())
+
+    def test_invalid_explorer_mode_is_conservative_without_spawning_cmd(self):
+        marker = self.root / "invoked"
+        result = self.parse_single_json(
+            self.run_explorer(
+                response=self.explorer_response(),
+                env_overrides={"JEVCTL_EXPLORER_MODE": "observe"},
+                invocation_marker=marker,
+            )
+        )
+        self.assertEqual("unavailable", result["status"])
+        self.assertEqual("invalid_config", result["reason"])
+        self.assertEqual("shadow", result["mode"])
+        self.assertFalse(marker.exists())
+
+    def test_explorer_thresholds_parse_and_control_confidence_status(self):
+        self.config_path.write_text(
+            json.dumps({
+                "enabled": True,
+                "gates": {
+                    "explorer": {
+                        "enabled": True,
+                        "thresholds": {
+                            "grounded_min": 0.9,
+                            "supported_min": 0.9,
+                            "material_gap_max": 0.1,
+                            "action_conf_min": 0.9,
+                        },
+                    }
+                },
+            }),
+            encoding="utf-8",
+        )
+        # Use the local cmd stub while keeping the config-derived thresholds active.
+        self.install_cmd(response=self.explorer_response(action="explore_more", confidence=0.85))
+        result = self.parse_single_json(
+            self.run_jevctl("explorer-gate", self.explorer_input(), env=self.env)
+        )
+        self.assertEqual("uncertain", result["status"])
+        self.assertFalse(result["would_block"])
+        self.assertEqual("shadow", result["mode"])
+
+    def test_invalid_explorer_threshold_configuration_is_rejected(self):
+        for thresholds in ({"unknown": 0.5}, {"grounded_min": 1.1}):
+            with self.subTest(thresholds=thresholds):
+                self.config_path.write_text(
+                    json.dumps({
+                        "enabled": True,
+                        "gates": {"explorer": {"enabled": True, "thresholds": thresholds}},
+                    }),
+                    encoding="utf-8",
+                )
+                marker = self.root / "invalid-threshold"
+                result = self.parse_single_json(
+                    self.run_explorer(
+                        response=self.explorer_response(), invocation_marker=marker
+                    )
+                )
+                self.assertEqual("invalid_config", result["reason"])
+                self.assertFalse(marker.exists())
+
+    def test_completion_gate_thresholds_keep_specific_override_and_legacy_config(self):
+        self.config_path.write_text(
+            json.dumps({
+                "enabled": True,
+                "mode": "active",
+                "thresholds": {"outcome_min": 0.99},
+                "gates": {"completion": {"thresholds": {"outcome_min": 0.9}}},
+            }),
+            encoding="utf-8",
+        )
+        self.install_cmd(response=JevctlTest.valid_response(outcome=0.97))
+        result = self.parse_single_json(
+            self.run_jevctl("completion-gate", JevctlTest.gate_input(), env=self.env)
+        )
+        self.assertTrue(result["auto_apply"])
+        self.assertTrue(result["would_auto_apply"])
+
+    def test_disabled_result_is_normalized_and_does_not_spawn_transport(self):
+        marker = self.root / "invoked"
+        self.install_cmd(response=self.explorer_response(), invocation_marker=marker)
+        result = self.parse_single_json(
+            self.run_jevctl("explorer-gate", env=self.env)
+        )
+        self.assertEqual(
+            {
+                "schema_version", "gate", "status", "action", "auto_apply",
+                "would_block", "mode", "answers", "next_step",
+                "next_step_confidence", "reason",
+            },
+            set(result),
+        )
+        self.assertEqual("explorer", result["gate"])
+        self.assertEqual({"evidence_grounded", "claim_supported", "material_gap"}, set(result["answers"]))
+        self.assertFalse(result["auto_apply"])
+        self.assertFalse(result["would_block"])
+        self.assertNotIn("completion_confidence", result)
+        self.assertNotIn("would_auto_apply", result)
+        self.assertFalse(marker.exists())
+
+    def test_orchestrator_reviewed_false_or_missing_short_circuits(self):
+        for reviewed in (False, None):
+            with self.subTest(reviewed=reviewed):
+                marker = self.root / f"review-{reviewed}"
+                payload = self.explorer_input()
+                if reviewed is None:
+                    payload.pop("orchestrator_reviewed")
+                else:
+                    payload["orchestrator_reviewed"] = reviewed
+                result = self.parse_single_json(
+                    self.run_explorer(
+                        response=self.explorer_response(),
+                        payload=payload,
+                        invocation_marker=marker,
+                    )
+                )
+                self.assertEqual("review_incomplete", result["reason"])
+                self.assertEqual("orchestrator_review", result["action"])
+                self.assertFalse(marker.exists())
+
+    def test_doctor_reports_gate_settings_without_model_request(self):
+        self.config_path.write_text(
+            json.dumps({
+                "enabled": True,
+                "gates": {"explorer": {"enabled": True, "mode": "active"}},
+            }),
+            encoding="utf-8",
+        )
+        captured_prompt = self.root / "model-prompt.json"
+        self.install_cmd(response=self.explorer_response(), capture_path=captured_prompt)
+        doctor = self.parse_single_json(self.run_jevctl("doctor", env=self.env))
+        self.assertTrue(doctor["ok"])
+        self.assertEqual(
+            {
+                "completion": {"enabled": True, "mode": "active"},
+                "explorer": {"enabled": True, "mode": "active"},
+            },
+            doctor["gates"],
+        )
+        self.assertFalse(captured_prompt.exists())
+
+    def test_request_uses_restricted_settled_state_and_system_one_questions(self):
+        capture_path = self.root / "request.json"
+        payload = self.explorer_input(untrusted_metadata="must not be forwarded")
+        self.install_cmd(response=self.explorer_response(), capture_path=capture_path)
+        completed = self.run_jevctl(
+            "explorer-gate",
+            payload,
+            env=dict(self.env, JEVCTL_ENABLED="1", JEVCTL_EXPLORER_ENABLED="1"),
+        )
+        self.parse_single_json(completed)
+        request = json.loads(capture_path.read_text(encoding="utf-8"))
+        self.assertEqual({"state", "questions"}, set(request))
+        self.assertNotIn("untrusted_metadata", request["state"])
+        self.assertEqual(
+            {"evidence_grounded", "claim_supported", "material_gap", "next_step"},
+            set(request["questions"]),
+        )
+        self.assertEqual("noul", request["questions"]["evidence_grounded"]["type"])
+        self.assertEqual("choice", request["questions"]["next_step"]["type"])
+        self.assertIn("root cause confirmed", request["questions"]["evidence_grounded"]["instructions"])
+
+    def test_shadow_action_matrix_only_confident_explore_more_would_block(self):
+        cases = (
+            ("proceed", "proceed_to_fix", 0.95, "decided", False),
+            ("explore", "explore_more", 0.95, "decided", True),
+            ("uncertain", "explore_more", 0.74, "uncertain", False),
+            ("review", "orchestrator_review", 0.95, "decided", False),
+        )
+        for name, action, confidence, status, would_block in cases:
+            with self.subTest(case=name):
+                result = self.parse_single_json(
+                    self.run_explorer(
+                        response=self.explorer_response(action=action, confidence=confidence),
+                        env_overrides={"JEVCTL_EXPLORER_MODE": "shadow"},
+                    )
+                )
+                self.assertEqual(status, result["status"])
+                self.assertEqual(action, result["action"])
+                self.assertEqual(action, result["next_step"])
+                self.assertEqual(would_block, result["would_block"])
+                self.assertFalse(result["auto_apply"])
+                self.assertEqual("shadow", result["mode"])
+
+    def test_active_proceed_never_applies_and_confident_explore_more_blocks(self):
+        proceed = self.parse_single_json(
+            self.run_explorer(
+                response=self.explorer_response(action="proceed_to_fix"),
+                env_overrides={"JEVCTL_EXPLORER_MODE": "active"},
+            )
+        )
+        self.assertEqual("active", proceed["mode"])
+        self.assertFalse(proceed["auto_apply"])
+        self.assertFalse(proceed["would_block"])
+
+        explore = self.parse_single_json(
+            self.run_explorer(
+                response=self.explorer_response(action="explore_more"),
+                env_overrides={"JEVCTL_EXPLORER_MODE": "active"},
+            )
+        )
+        self.assertTrue(explore["would_block"])
+        self.assertFalse(explore["auto_apply"])
+
+    def test_malformed_response_falls_back_conservatively(self):
+        completed = self.run_explorer(raw_stdout="not-json")
+        result = self.parse_single_json(completed)
+        self.assertEqual("unavailable", result["status"])
+        self.assertEqual("invalid_response", result["reason"])
+        self.assertEqual("orchestrator_review", result["action"])
+        self.assertEqual("orchestrator_review", result["next_step"])
+        self.assertFalse(result["auto_apply"])
+        self.assertFalse(result["would_block"])
+        self.assertEqual(1, completed.stdout.count("\n"))
+
+    def test_bad_probability_ranges_wrong_action_missing_answer_and_types_are_rejected(self):
+        def wrong_action(response):
+            response["answers"]["next_step"]["choice"] = "complete"
+
+        def missing_answer(response):
+            del response["answers"]["material_gap"]
+
+        def wrong_answer_type(response):
+            response["answers"]["evidence_grounded"]["noul"] = "0.9"
+
+        def wrong_choice_type(response):
+            response["answers"]["next_step"] = []
+
+        def wrong_usage_type(response):
+            response["usage"] = []
+
+        cases = (
+            ("negative", lambda response: response["answers"]["evidence_grounded"].update(noul=-0.01)),
+            ("above_one", lambda response: response["answers"]["claim_supported"].update(noul=1.01)),
+            ("boolean", lambda response: response["answers"]["material_gap"].update(noul=True)),
+            ("wrong_action", wrong_action),
+            ("missing_answer", missing_answer),
+            ("wrong_answer_type", wrong_answer_type),
+            ("wrong_choice_type", wrong_choice_type),
+            ("wrong_usage_type", wrong_usage_type),
+        )
+        for name, mutate in cases:
+            with self.subTest(case=name):
+                response = self.explorer_response()
+                mutate(response)
+                result = self.parse_single_json(self.run_explorer(response=response))
+                self.assertEqual("unavailable", result["status"])
+                self.assertEqual("invalid_response", result["reason"])
+
+    def test_invalid_input_types_and_forbidden_fields_are_invalid_request(self):
+        cases = (
+            {"explorer_claim": "  "},
+            {"evidence_supporting_claim": "not-a-list"},
+            {"orchestrator_reviewed": "true"},
+            {"raw_transcript": "private history"},
+            {"explorer_confidence": {"level": [], "reason": "bad type"}},
+        )
+        for update in cases:
+            with self.subTest(update=update):
+                marker = self.root / "invalid-input"
+                result = self.parse_single_json(
+                    self.run_explorer(
+                        response=self.explorer_response(),
+                        payload=self.explorer_input(**update),
+                        invocation_marker=marker,
+                    )
+                )
+                self.assertEqual("invalid_request", result["reason"])
+                self.assertFalse(marker.exists())
+
+    def test_missing_cmd_and_exit_code_mapping_return_unavailable(self):
+        empty_path = self.root / "empty-path"
+        empty_path.mkdir()
+        env = dict(
+            self.env,
+            PATH=str(empty_path),
+            JEVCTL_ENABLED="1",
+            JEVCTL_EXPLORER_ENABLED="1",
+        )
+        missing = self.parse_single_json(
+            self.run_jevctl("explorer-gate", self.explorer_input(), env=env)
+        )
+        self.assertEqual("missing_command", missing["reason"])
+        self.assertEqual("orchestrator_review", missing["next_step"])
+
+        rate_limited = self.parse_single_json(
+            self.run_explorer(response=self.explorer_response(), exit_code=5)
+        )
+        self.assertEqual("rate_limited", rate_limited["reason"])
+        self.assertEqual("orchestrator_review", rate_limited["action"])
+
+    def test_unexpected_gate_exception_propagates_and_interrupt_is_normalized(self):
+        import contextlib
+        import importlib.machinery
+        import io
+
+        loader = importlib.machinery.SourceFileLoader("jevctl_explorer_test", str(JEVCTL))
+        spec = importlib.util.spec_from_loader("jevctl_explorer_test", loader)
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+        module.load_settings = lambda: {"gates": {"explorer": {"mode": "active"}}}
+
+        def boom():
+            raise RuntimeError("boom")
+
+        module.explorer_result = boom
+        with self.assertRaises(RuntimeError):
+            module.main(["jevctl", "explorer-gate"])
+
+        def interrupt():
+            raise KeyboardInterrupt
+
+        module.explorer_result = interrupt
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            self.assertEqual(0, module.main(["jevctl", "explorer-gate"]))
+        result = json.loads(stdout.getvalue())
+        self.assertEqual("interrupted", result["reason"])
+        self.assertEqual("active", result["mode"])
+        self.assertIn("jevctl: interrupted", stderr.getvalue())
 
 
 if __name__ == "__main__":

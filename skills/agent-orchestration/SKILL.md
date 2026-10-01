@@ -621,7 +621,6 @@ Jev cannot override deterministic failures, policy, or this skill's invariants.
 If Jev is unavailable, invalid, uncertain, or disabled, continue the existing
 workflow conservatively; removing it leaves orchestration behavior unchanged.
 
-
 #### Shadow mode
 
 In enabled `shadow` mode, work, review, and verify normally, then decide the next
@@ -650,6 +649,18 @@ Agreement:
 action_match: (orchestrator_action==jev_action)
 completion_match: ((both complete) or (both not complete))
 ```
+
+### Optional Jev Explorer gate
+
+[`EXPLORER_GATE.md`](references/EXPLORER_GATE.md) is authoritative for the optional post-Explorer evidence gate. Run it only after the Explorer returns and you have reviewed and settled its evidence.
+Set `orchestrator_reviewed: true` only after that review. Disabled or incomplete-review gates do not start `cmd`.
+
+In `shadow`, record the result without changing the route.
+In `active`, only a decided, confident `explore_more` may hold the fixer handoff.
+`proceed_to_fix` is not authorization; neither mode auto-applies.
+For uncertain or unavailable results, continue from your evidence review or escalate.
+
+This gate precedes implementation; the existing Completion Gate remains post-diff-review and deterministic verification.
 
 On normal completion:
 
