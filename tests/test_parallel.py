@@ -270,7 +270,113 @@ class ParallelValidateTest(unittest.TestCase):
             [{"unit_id": "unit-2", "gap": "The external test environment was unavailable."}],
             result["gaps"],
         )
+        self.assertFalse(result["recoverable"])
+        self.assertEqual([], result["recoverable_units"])
+        self.assertEqual([], result["pending_units"])
+        self.assertEqual([], result["running_units"])
+
+
+    def test_pending_unit_is_active_visible_and_not_ready(self):
+        result = self.parse_verdict(
+            self.run_validator(
+                self.convergence(
+                    [
+                        {"unit_id": "unit-1", "status": "accepted", "accepted_result": self.herdr_result()},
+                        {"unit_id": "unit-2", "status": "pending"},
+                    ]
+                )
+            )
+        )
+        self.assertFalse(result["ready"])
+        self.assertEqual("active_units", result["reason"])
+        self.assertEqual(["unit-1"], result["accepted_units"])
+        self.assertEqual([], result["failed_units"])
+        self.assertEqual([], result["incomplete_units"])
+        self.assertEqual(["unit-2"], result["pending_units"])
+        self.assertEqual([], result["running_units"])
+        self.assertEqual([], result["gaps"])
+        self.assertEqual([], result["recoverable_units"])
+        self.assertFalse(result["recoverable"])
+
+    def test_running_unit_is_active_visible_and_not_ready(self):
+        result = self.parse_verdict(
+            self.run_validator(
+                self.convergence(
+                    [
+                        {"unit_id": "unit-1", "status": "accepted", "accepted_result": self.herdr_result()},
+                        {"unit_id": "unit-2", "status": "running"},
+                    ]
+                )
+            )
+        )
+        self.assertFalse(result["ready"])
+        self.assertEqual("active_units", result["reason"])
+        self.assertEqual(["unit-1"], result["accepted_units"])
+        self.assertEqual([], result["failed_units"])
+        self.assertEqual([], result["incomplete_units"])
+        self.assertEqual([], result["pending_units"])
+        self.assertEqual(["unit-2"], result["running_units"])
+        self.assertEqual([], result["gaps"])
+        self.assertEqual([], result["recoverable_units"])
+        self.assertFalse(result["recoverable"])
+
+    def test_active_units_block_ready_with_gaps(self):
+        for status in ("pending", "running"):
+            with self.subTest(status=status):
+                result = self.parse_verdict(
+                    self.run_validator(
+                        self.convergence(
+                            [
+                                {"unit_id": "unit-1", "status": "accepted", "accepted_result": self.herdr_result()},
+                                {"unit_id": "unit-2", "status": "failed", "gaps": ["terminal gap"]},
+                                {"unit_id": "unit-3", "status": status},
+                            ]
+                        )
+                    )
+                )
+                self.assertFalse(result["ready"])
+                self.assertEqual("active_units", result["reason"])
+                self.assertEqual(["unit-2"], result["failed_units"])
+                self.assertEqual([], result["incomplete_units"])
+                self.assertEqual(["unit-3"] if status == "pending" else [], result["pending_units"])
+                self.assertEqual(["unit-3"] if status == "running" else [], result["running_units"])
+                self.assertEqual([], result["recoverable_units"])
+                self.assertFalse(result["recoverable"])
+
+    def test_incomplete_unit_with_explicit_gap_is_not_ready(self):
+        result = self.parse_verdict(
+            self.run_validator(
+                self.convergence(
+                    [
+                        {"unit_id": "unit-1", "status": "accepted", "accepted_result": self.herdr_result()},
+                        {"unit_id": "unit-2", "status": "incomplete", "gaps": ["attempted shortcut"]},
+                    ]
+                )
+            )
+        )
+        self.assertFalse(result["ready"])
+        self.assertEqual("incomplete_units", result["reason"])
+        self.assertEqual(["unit-2"], result["incomplete_units"])
+        self.assertEqual([], result["gaps"])
+        self.assertEqual(["unit-2"], result["recoverable_units"])
         self.assertTrue(result["recoverable"])
+
+    def test_three_unit_all_accepted_batch_is_ready(self):
+        units = [
+            {
+                "unit_id": f"unit-{index}",
+                "status": "accepted",
+                "accepted_result": self.herdr_result(f"Finding {index}"),
+            }
+            for index in range(1, 4)
+        ]
+        result = self.parse_verdict(self.run_validator(self.convergence(units)))
+        self.assertTrue(result["ready"])
+        self.assertEqual("all_accepted", result["reason"])
+        self.assertEqual(["unit-1", "unit-2", "unit-3"], result["accepted_units"])
+        self.assertFalse(result["recoverable"])
+        self.assertEqual([], result["pending_units"])
+        self.assertEqual([], result["running_units"])
 
     def test_failed_unit_without_explicit_gap_is_not_ready(self):
         result = self.parse_verdict(
@@ -386,14 +492,44 @@ class ParallelValidateTest(unittest.TestCase):
         self.assertTrue(result["recoverable"])
 
     def test_invalid_json_returns_json_verdict_and_usage_error_uses_stderr(self):
-        invalid = self.parse_verdict(self.run_validator(raw_input="not-json"))
-        self.assertFalse(invalid["admitted"])
-        self.assertEqual("invalid_input", invalid["reason"])
+        cases = (
+            ("malformed_json", None, "not-json"),
+            ("non_object", None, "[]"),
+            ("unknown_mode", {"mode": "unknown"}, None),
+            ("missing_mode", {}, None),
+            ("null_mode", {"mode": None}, None),
+        )
+        for name, payload, raw_input in cases:
+            with self.subTest(case=name):
+                result = self.parse_verdict(
+                    self.run_validator(payload, raw_input=raw_input)
+                )
+                self.assertEqual(
+                    {"admitted": False, "ready": False, "reason": "invalid_input"},
+                    result,
+                )
+                self.assertNotIn("accepted_units", result)
 
         usage = self.run_validator(args=("unexpected",))
         self.assertEqual(2, usage.returncode)
         self.assertEqual("", usage.stdout)
         self.assertIn("usage:", usage.stderr)
+
+    def test_recognized_convergence_mode_with_malformed_payload_is_ready_false(self):
+        payloads = (
+            {"mode": "convergence"},
+            {"mode": "convergence", "objective": "o", "units": []},
+            {"mode": "convergence", "objective": "o", "units": "x"},
+        )
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                result = self.parse_verdict(self.run_validator(payload))
+                self.assertFalse(result["ready"])
+                self.assertEqual("invalid_input", result["reason"])
+                self.assertEqual([], result["accepted_units"])
+                self.assertEqual([], result["pending_units"])
+                self.assertEqual([], result["running_units"])
+                self.assertNotIn("admitted", result)
 
 
 if __name__ == "__main__":

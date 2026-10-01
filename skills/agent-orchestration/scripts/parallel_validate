@@ -25,14 +25,16 @@ def admission_result(admitted, reason, checks):
     return {"admitted": admitted, "reason": reason, "checks": checks}
 
 
-def convergence_result(ready, reason, accepted, failed, incomplete, gaps):
-    recoverable_units = failed + incomplete
+def convergence_result(ready, reason, accepted, failed, incomplete, pending, running, gaps):
+    recoverable_units = list(incomplete)
     return {
         "ready": ready,
         "reason": reason,
         "accepted_units": accepted,
         "failed_units": failed,
         "incomplete_units": incomplete,
+        "pending_units": pending,
+        "running_units": running,
         "gaps": gaps,
         "recoverable_units": recoverable_units,
         "recoverable": bool(recoverable_units),
@@ -182,21 +184,23 @@ def validate_convergence(data):
     objective = data.get("objective")
     units = data.get("units")
     if not nonempty_string(objective) or not isinstance(units, list) or not units:
-        return convergence_result(False, "invalid_input", [], [], [], [])
+        return convergence_result(False, "invalid_input", [], [], [], [], [], [])
     if not 2 <= len(units) <= DEFAULT_MAX_EXPLORERS:
-        return convergence_result(False, "invalid_batch_size", [], [], [], [])
+        return convergence_result(False, "invalid_batch_size", [], [], [], [], [], [])
     if not all(isinstance(unit, dict) for unit in units):
-        return convergence_result(False, "invalid_input", [], [], [], [])
+        return convergence_result(False, "invalid_input", [], [], [], [], [], [])
     unit_ids = [unit.get("unit_id") for unit in units]
     if (
         not all(nonempty_string(unit_id) for unit_id in unit_ids)
         or len(set(unit_ids)) != len(unit_ids)
     ):
-        return convergence_result(False, "invalid_input", [], [], [], [])
+        return convergence_result(False, "invalid_input", [], [], [], [], [], [])
 
     accepted = []
     failed = []
     incomplete = []
+    pending = []
+    running = []
     gaps = []
     failed_without_gaps = False
     invalid_result = False
@@ -226,7 +230,12 @@ def validate_convergence(data):
                 if not valid_herdr_result(unit["accepted_result"]):
                     invalid_result = True
         elif isinstance(status, str) and status in {"incomplete", "pending", "running"}:
-            incomplete.append(unit_id)
+            if status == "incomplete":
+                incomplete.append(unit_id)
+            elif status == "pending":
+                pending.append(unit_id)
+            else:
+                running.append(unit_id)
             if "accepted_result" in unit and unit["accepted_result"] is not None:
                 if not valid_herdr_result(unit["accepted_result"]):
                     invalid_result = True
@@ -235,33 +244,47 @@ def validate_convergence(data):
             incomplete.append(unit_id)
 
     if invalid_result:
-        return convergence_result(False, "invalid_result", accepted, failed, incomplete, gaps)
+        return convergence_result(
+            False, "invalid_result", accepted, failed, incomplete, pending, running, gaps
+        )
     if invalid_status:
-        return convergence_result(False, "invalid_input", accepted, failed, incomplete, gaps)
+        return convergence_result(
+            False, "invalid_input", accepted, failed, incomplete, pending, running, gaps
+        )
     if failed_without_gaps:
-        return convergence_result(False, "failed_without_gaps", accepted, failed, incomplete, gaps)
+        return convergence_result(
+            False, "failed_without_gaps", accepted, failed, incomplete, pending, running, gaps
+        )
     if incomplete:
-        return convergence_result(False, "incomplete_units", accepted, failed, incomplete, gaps)
+        return convergence_result(
+            False, "incomplete_units", accepted, failed, incomplete, pending, running, gaps
+        )
+    if pending or running:
+        return convergence_result(
+            False, "active_units", accepted, failed, incomplete, pending, running, gaps
+        )
     if failed:
-        return convergence_result(True, "ready_with_gaps", accepted, failed, incomplete, gaps)
-    return convergence_result(True, "all_accepted", accepted, failed, incomplete, gaps)
+        return convergence_result(
+            True, "ready_with_gaps", accepted, failed, incomplete, pending, running, gaps
+        )
+    return convergence_result(
+        True, "all_accepted", accepted, failed, incomplete, pending, running, gaps
+    )
 
 
-def invalid_input_result(mode):
-    if mode == "convergence":
-        return convergence_result(False, "invalid_input", [], [], [], [])
-    return admission_result(False, "invalid_input", {})
+def invalid_input_result():
+    return {"admitted": False, "ready": False, "reason": "invalid_input"}
 
 
 def validate(data):
     if not isinstance(data, dict):
-        return invalid_input_result(None)
+        return invalid_input_result()
     mode = data.get("mode")
     if mode == "admission":
         return validate_admission(data)
     if mode == "convergence":
         return validate_convergence(data)
-    return invalid_input_result(mode)
+    return invalid_input_result()
 
 
 def main(argv):
@@ -271,7 +294,7 @@ def main(argv):
     try:
         data = json.loads(sys.stdin.read(), parse_constant=reject_json_constant)
     except (ValueError, TypeError, RecursionError):
-        emit_json(invalid_input_result(None))
+        emit_json(invalid_input_result())
         return 0
     emit_json(validate(data))
     return 0

@@ -62,3 +62,16 @@ because a prompt settled there, because a submission was refused with
 the cause before retrying. Handle expected permission prompts safely, and ask the
 user before answering one on their behalf. Never weaken or bypass the permission
 policy merely to make progress.
+
+
+## Convergence status mapping
+
+These outcomes map to Parallel Explorers convergence status ([`PARALLEL.md`](PARALLEL.md)):
+
+- `agent_blocked` (submission refused before input was sent) and a prompt that settles on `blocked`: the unit has not settled; while recovery is possible it is `incomplete` (recoverable), not `failed`.
+- `agent_prompt_stalled`, or no observable progress after a batch submission within the bounded liveness window: submission/start failure → `incomplete`; inspect and re-prompt the same unit before judging it.
+- Interruption before an accepted result: `incomplete`; resume the same unit. Accepted sibling results are kept and never rerun.
+- Timeout during collection: inspect before deciding; the unit remains `incomplete`/`running` until it settles. A timeout alone is not a terminal failure, and successful siblings are preserved.
+- No valid `HERDR_RESULT` after the unit settles: `incomplete`, with the evidence gap recorded; an invalid or missing result is never promoted to success.
+
+Only after the Orchestrator has exhausted or deliberately abandoned recovery for a unit may it record terminal `failed` with one or more explicit non-empty `gaps` for `ready_with_gaps`. Recoverable operational failures must never be normalized to terminal `failed` merely so a batch can converge.
