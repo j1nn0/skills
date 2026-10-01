@@ -991,7 +991,7 @@ class ExplorerGateTest(unittest.TestCase):
             {
                 "schema_version", "gate", "status", "action", "auto_apply",
                 "would_block", "mode", "answers", "next_step",
-                "next_step_confidence", "reason",
+                "next_step_confidence", "evidence_sufficient", "reason",
             },
             set(result),
         )
@@ -999,6 +999,7 @@ class ExplorerGateTest(unittest.TestCase):
         self.assertEqual({"evidence_grounded", "claim_supported", "material_gap"}, set(result["answers"]))
         self.assertFalse(result["auto_apply"])
         self.assertFalse(result["would_block"])
+        self.assertFalse(result["evidence_sufficient"])
         self.assertNotIn("completion_confidence", result)
         self.assertNotIn("would_auto_apply", result)
         self.assertFalse(marker.exists())
@@ -1021,6 +1022,7 @@ class ExplorerGateTest(unittest.TestCase):
                 )
                 self.assertEqual("review_incomplete", result["reason"])
                 self.assertEqual("orchestrator_review", result["action"])
+                self.assertFalse(result["evidence_sufficient"])
                 self.assertFalse(marker.exists())
 
     def test_doctor_reports_gate_settings_without_model_request(self):
@@ -1067,12 +1069,12 @@ class ExplorerGateTest(unittest.TestCase):
 
     def test_shadow_action_matrix_only_confident_explore_more_would_block(self):
         cases = (
-            ("proceed", "proceed_to_fix", 0.95, "decided", False),
-            ("explore", "explore_more", 0.95, "decided", True),
-            ("uncertain", "explore_more", 0.74, "uncertain", False),
-            ("review", "orchestrator_review", 0.95, "decided", False),
+            ("proceed", "proceed_to_fix", 0.95, "decided", False, True),
+            ("explore", "explore_more", 0.95, "decided", True, False),
+            ("uncertain", "explore_more", 0.74, "uncertain", False, False),
+            ("review", "orchestrator_review", 0.95, "decided", False, False),
         )
-        for name, action, confidence, status, would_block in cases:
+        for name, action, confidence, status, would_block, sufficient in cases:
             with self.subTest(case=name):
                 result = self.parse_single_json(
                     self.run_explorer(
@@ -1084,8 +1086,69 @@ class ExplorerGateTest(unittest.TestCase):
                 self.assertEqual(action, result["action"])
                 self.assertEqual(action, result["next_step"])
                 self.assertEqual(would_block, result["would_block"])
+                self.assertEqual(sufficient, result["evidence_sufficient"])
                 self.assertFalse(result["auto_apply"])
                 self.assertEqual("shadow", result["mode"])
+
+
+    def test_proceed_recommendation_exposes_threshold_qualified_sufficiency(self):
+        positive = self.parse_single_json(
+            self.run_explorer(
+                response=self.explorer_response(
+                    grounded=0.90,
+                    supported=0.90,
+                    gap=0.10,
+                    action="proceed_to_fix",
+                    confidence=0.90,
+                ),
+                env_overrides={"JEVCTL_EXPLORER_MODE": "shadow"},
+            )
+        )
+        case1 = self.parse_single_json(
+            self.run_explorer(
+                response=self.explorer_response(
+                    grounded=0.95,
+                    supported=0.91,
+                    gap=0.24,
+                    action="proceed_to_fix",
+                    confidence=0.91,
+                ),
+                env_overrides={"JEVCTL_EXPLORER_MODE": "shadow"},
+            )
+        )
+
+        self.assertEqual("decided", positive["status"])
+        self.assertTrue(positive["evidence_sufficient"])
+        self.assertEqual("decided", case1["status"])
+        self.assertEqual("proceed_to_fix", case1["action"])
+        self.assertFalse(case1["evidence_sufficient"])
+        for field in ("status", "action", "next_step", "would_block", "auto_apply", "mode"):
+            self.assertEqual(positive[field], case1[field], field)
+        self.assertNotEqual(positive["answers"], case1["answers"])
+        self.assertAlmostEqual(0.10, positive["answers"]["material_gap"])
+        self.assertAlmostEqual(0.24, case1["answers"]["material_gap"])
+        self.assertFalse(positive["would_block"])
+        self.assertFalse(case1["would_block"])
+        self.assertFalse(positive["auto_apply"])
+        self.assertFalse(case1["auto_apply"])
+
+    def test_low_confidence_proceed_is_uncertain_and_not_sufficient(self):
+        result = self.parse_single_json(
+            self.run_explorer(
+                response=self.explorer_response(
+                    grounded=0.86,
+                    supported=0.81,
+                    gap=0.51,
+                    action="proceed_to_fix",
+                    confidence=0.29,
+                )
+            )
+        )
+        self.assertEqual("uncertain", result["status"])
+        self.assertEqual("proceed_to_fix", result["action"])
+        self.assertFalse(result["evidence_sufficient"])
+        self.assertFalse(result["would_block"])
+        self.assertFalse(result["auto_apply"])
 
     def test_active_proceed_never_applies_and_confident_explore_more_blocks(self):
         proceed = self.parse_single_json(
@@ -1097,6 +1160,7 @@ class ExplorerGateTest(unittest.TestCase):
         self.assertEqual("active", proceed["mode"])
         self.assertFalse(proceed["auto_apply"])
         self.assertFalse(proceed["would_block"])
+        self.assertTrue(proceed["evidence_sufficient"])
 
         explore = self.parse_single_json(
             self.run_explorer(
@@ -1106,6 +1170,7 @@ class ExplorerGateTest(unittest.TestCase):
         )
         self.assertTrue(explore["would_block"])
         self.assertFalse(explore["auto_apply"])
+        self.assertFalse(explore["evidence_sufficient"])
 
     def test_malformed_response_falls_back_conservatively(self):
         completed = self.run_explorer(raw_stdout="not-json")
@@ -1116,6 +1181,7 @@ class ExplorerGateTest(unittest.TestCase):
         self.assertEqual("orchestrator_review", result["next_step"])
         self.assertFalse(result["auto_apply"])
         self.assertFalse(result["would_block"])
+        self.assertFalse(result["evidence_sufficient"])
         self.assertEqual(1, completed.stdout.count("\n"))
 
     def test_bad_probability_ranges_wrong_action_missing_answer_and_types_are_rejected(self):
@@ -1187,12 +1253,14 @@ class ExplorerGateTest(unittest.TestCase):
         )
         self.assertEqual("missing_command", missing["reason"])
         self.assertEqual("orchestrator_review", missing["next_step"])
+        self.assertFalse(missing["evidence_sufficient"])
 
         rate_limited = self.parse_single_json(
             self.run_explorer(response=self.explorer_response(), exit_code=5)
         )
         self.assertEqual("rate_limited", rate_limited["reason"])
         self.assertEqual("orchestrator_review", rate_limited["action"])
+        self.assertFalse(rate_limited["evidence_sufficient"])
 
     def test_unexpected_gate_exception_propagates_and_interrupt_is_normalized(self):
         import contextlib

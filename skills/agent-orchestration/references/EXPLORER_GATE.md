@@ -62,7 +62,17 @@ Defaults are centralized in `scripts/jevctl`:
 | `material_gap_max` | `0.20` | `material_gap` must be at or below this value. |
 | `action_conf_min` | `0.75` | `next_step_confidence` at or above this value is `decided`; otherwise status is `uncertain`. |
 
-The evidence-sufficiency condition is the conjunction of `next_step == "proceed_to_fix"`, a confident choice, both grounded/support probabilities meeting their minimums, and material-gap probability meeting its maximum. Results expose the three probabilities and `next_step_confidence` so the orchestrator can inspect this condition directly; there is no separate completion-confidence scalar. `would_block` is true only for a decided, confident `explore_more` choice. `auto_apply` is always false.
+`action` and `next_step` are the validated Jev recommendation unchanged; thresholds never rewrite the choice. `status` is `decided` iff `next_step_confidence >= action_conf_min`; otherwise it is `uncertain`. `evidence_sufficient` is true exactly when all five conditions hold: action is `proceed_to_fix`, the choice is confident, `evidence_grounded >= grounded_min`, `claim_supported >= supported_min`, and `material_gap <= material_gap_max`. The normalized response includes this additive boolean on decided/uncertain results and sets it false on unavailable results; `schema_version` remains `1`. `would_block` remains true only for a decided, confident `explore_more` choice. `auto_apply` is always false; there is no completion-confidence scalar.
+
+### Qualification cases and calibration
+
+**Case 1:** `proceed_to_fix` with confidence `0.91` and `material_gap: 0.24` is still `decided` and keeps the raw `proceed_to_fix` action, but `evidence_sufficient` is false because `0.24 > material_gap_max (0.20)`. This is not a positive gate endorsement; the Orchestrator must not treat it as clearance.
+
+**Case 5:** a raw `proceed_to_fix` with confidence `0.29` is `uncertain` and has `evidence_sufficient: false`. It returns control to the Orchestrator for its ordinary evidence judgment; the raw action is not operational risk or permission.
+
+Define `false_decided_proceed` as true **only** when the Orchestrator judged the evidence insufficient, normalized `status == "decided"`, normalized `action == "proceed_to_fix"`, and `evidence_sufficient == true`. An uncertain raw `proceed_to_fix` never counts.
+
+Keep `material_gap_max: 0.20` provisional and defer calibration: one `0.24` sample is insufficient to justify changing the threshold. Preserve the observed separation between `0.24` and the `0.51` / `0.86+` examples; Case 1 is now visible through `evidence_sufficient`, not a threshold tweak.
 
 ## Shadow and active modes
 
@@ -77,15 +87,15 @@ The gate may add a cautious hold; it cannot grant permission, broaden scope, or 
 
 | Result | Shadow handling | Active handling |
 | --- | --- | --- |
-| Decided `proceed_to_fix` and evidence-sufficiency conditions hold | Record as an observation; make the normal orchestrator decision. | The evidence may support considering a bounded fixer handoff; the orchestrator still decides and supplies scope. |
-| `proceed_to_fix` but the evidence-sufficiency conditions do not hold | Ignore Jev as a control signal; inspect the evidence and choose the normal route. | Do not treat the choice as clearance. Resolve the factual gap or use the normal review/escalation path; the gate itself does not auto-apply or invent a block. |
+| Decided `proceed_to_fix` with `evidence_sufficient: true` | Record as an observation; make the normal orchestrator decision. | The evidence may support considering a bounded fixer handoff; the orchestrator still decides and supplies scope. |
+| `proceed_to_fix` with `evidence_sufficient: false` | Ignore Jev as a control signal; inspect the evidence and choose the normal route. | Do not treat the recommendation as clearance. Resolve the factual gap or use the normal review/escalation path; the gate itself does not auto-apply or invent a block. |
 | Decided, confident `explore_more` (`would_block: true`) | Report only; continue with the pre-existing orchestrator decision. | Hold the fixer handoff for focused evidence gathering or orchestrator review. |
 | `orchestrator_review` | Report only; the orchestrator judges the evidence and route. | The orchestrator reviews, re-scopes, asks the user, or routes further investigation; Jev does not choose among them. |
-| Uncertain, unavailable, disabled, invalid, or review-incomplete | Do not treat the result as permission or as a task failure; use the normal workflow. | Same conservative fallback; no automatic action. An ineligible request must not start a model transport. |
+| Uncertain, unavailable, disabled, invalid, or review-incomplete | Do not treat the result as permission or as a task failure; use the normal workflow. | Same conservative fallback; uncertain raw `proceed_to_fix` has `evidence_sufficient: false` and returns control to the Orchestrator. No automatic action or model transport for an ineligible request. |
 
 ## Fallback and completion interaction
 
-Unavailable results normalize to `action: "orchestrator_review"`, `next_step: "orchestrator_review"`, `auto_apply: false`, `would_block: false`, null evidence answers, and a sanitized reason. Transport failures, invalid responses, missing commands, invalid config, interruption, and disabled/incomplete-review short circuits do not authorize a fixer. The orchestrator continues from its own evidence review, gathers missing facts when useful, or escalates; Jev failure alone does not fail the task.
+Unavailable results normalize to `action: "orchestrator_review"`, `next_step: "orchestrator_review"`, `auto_apply: false`, `would_block: false`, `evidence_sufficient: false`, null evidence answers, and a sanitized reason. Transport failures, invalid responses, missing commands, invalid config, interruption, and disabled/incomplete-review short circuits do not authorize a fixer. The orchestrator continues from its own evidence review, gathers missing facts when useful, or escalates; Jev failure alone does not fail the task.
 
 The Explorer Gate precedes implementation. The separate Completion Gate remains post-implementation and retains its existing input, deterministic-verification requirement, thresholds, action set, and completion decision behavior; see [`JEV.md`](JEV.md). Do not call the Completion Gate to settle an Explorer claim, and do not let either gate replace the other gate's lifecycle.
 

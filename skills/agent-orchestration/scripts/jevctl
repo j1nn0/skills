@@ -793,6 +793,7 @@ def gate_unavailable_result(gate, reason, mode, answer_ids, confidence_field):
         "action": "orchestrator_review",
         "auto_apply": False,
         "would_block": False,
+        "evidence_sufficient": False,
         "mode": mode,
         "answers": {answer_id: None for answer_id in answer_ids},
         "next_step": "orchestrator_review",
@@ -919,7 +920,7 @@ def explorer_result():
     thresholds = explorer_settings["thresholds"]
     confident = confidence >= thresholds["action_conf_min"]
     status = "decided" if confident else "uncertain"
-    sufficiency = bool(
+    evidence_sufficient = bool(
         action == "proceed_to_fix"
         and confident
         and values["evidence_grounded"] >= thresholds["grounded_min"]
@@ -927,9 +928,6 @@ def explorer_result():
         and values["material_gap"] <= thresholds["material_gap_max"]
     )
     would_block = bool(status == "decided" and action == "explore_more" and confident)
-    # Sufficiency is derivable from the returned answers and configured thresholds;
-    # the wire schema intentionally carries those facts rather than a second flag.
-    _ = sufficiency
     return {
         "schema_version": 1,
         "gate": "explorer",
@@ -937,6 +935,7 @@ def explorer_result():
         "action": action,
         "auto_apply": False,
         "would_block": would_block,
+        "evidence_sufficient": evidence_sufficient,
         "mode": mode,
         "answers": values,
         "next_step": action,
