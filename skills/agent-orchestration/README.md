@@ -59,6 +59,7 @@ existing `herdr` skill.
 | `references/HARVEST.md` | Optional Harvest orchestration identity, objective lifecycle, capability negotiation, runtime locator validation, claim protocol, and graceful degradation. |
 | `references/RECOVERY.md` | Submission failures, timeout, `blocked`, and stuck-agent handling. |
 | `references/PARALLEL.md` | Policy for bounded, read-only parallel Explorer batches, admission, result collection, and orchestrator convergence. |
+| `scripts/parallel_validate` | Pipe one JSON object on stdin, for example `printf '%s\n' "$json" | scripts/parallel_validate`; `mode` is `admission` or `convergence` (payloads in `references/PARALLEL.md`). |
 | `references/JEV.md` | Completion Gate policy, with the multi-gate overview and Explorer Gate pointer. |
 | `references/EXPLORER_GATE.md` | Optional post-Explorer evidence-sufficiency policy, thresholds, conservative action rules, and integration. |
 | `scripts/jevctl` | Stdlib-only CLI for `doctor`, `completion-gate`, and `explorer-gate`; `doctor` makes no model request. |

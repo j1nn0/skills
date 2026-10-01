@@ -27,6 +27,10 @@ Run `scripts/jevctl explorer-gate` only when all of the following hold:
 
 Do not run it before the Explorer returns, before orchestrator review, on an unsafe or incomplete evidence summary, or when the gate is disabled. With the gate disabled, `jevctl` returns `unavailable` with reason `disabled` without starting a transport. If `orchestrator_reviewed` is missing or false, it returns `review_incomplete` without starting a transport. Invalid input is also unavailable and must not be repaired by inventing evidence.
 
+### Parallel Explorer batches
+
+For a batch admitted under [`PARALLEL.md`](PARALLEL.md), collect and synthesize the sibling evidence first, then make zero or one Explorer Gate call for the shared parent objective—never a separate call per Explorer. Zero calls are valid when the gate is disabled or the combined request is otherwise ineligible; at most one reviewed summary may be submitted. This does not change gate eligibility, schema, thresholds, or semantics.
+
 ## Settled-state contract and privacy
 
 Send one JSON object on stdin. Required fields are:

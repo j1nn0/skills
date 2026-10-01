@@ -114,7 +114,7 @@ def validate_admission(data):
     checks["active_batch_limit"] = (
         not isinstance(active_batches, bool)
         and isinstance(active_batches, int)
-        and 0 <= active_batches <= 1
+        and active_batches == 0
     )
     checks["unit_objectives_and_criteria"] = all(
         nonempty_string(unit.get("objective"))
@@ -208,6 +208,7 @@ def validate_convergence(data):
         if status == "accepted":
             if not valid_herdr_result(unit.get("accepted_result")):
                 invalid_result = True
+                incomplete.append(unit_id)
             else:
                 accepted.append(unit_id)
         elif status == "failed":
@@ -231,6 +232,7 @@ def validate_convergence(data):
                     invalid_result = True
         else:
             invalid_status = True
+            incomplete.append(unit_id)
 
     if invalid_result:
         return convergence_result(False, "invalid_result", accepted, failed, incomplete, gaps)

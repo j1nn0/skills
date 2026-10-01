@@ -34,7 +34,7 @@ This is policy documentation, not a v1 config-file loader. `jev.json` remains Je
   "enabled":true,
   "max_explorers":3,
   "objective":"Investigate the intermittent import failure",
-  "active_batches":1,
+  "active_batches":0,
   "units":[
     {
       "unit_id":"import-path",
@@ -58,18 +58,46 @@ This is policy documentation, not a v1 config-file loader. `jev.json` remains Je
 }
 ```
 
-The top-level `objective` is the shared parent; each unit has its own bounded objective and independently checkable completion criteria. The caller supplies `active_batches` as the projected count for this objective; a second active batch is rejected when the count exceeds one. Admission requires 2–3 unique, stable `unit_id` values, `role: "explorer"` for every unit, `read_only: true`, non-empty objectives and completion criteria, and empty `depends_on` arrays. A single valid Explorer unit returns `admitted: false` with reason `single_unit_sequential`, directing the caller to the sequential path rather than reporting malformed input.
+The top-level `objective` is the shared parent; each unit has its own bounded objective and independently checkable completion criteria. Admission requires 2–3 unique, stable `unit_id` values, `role: "explorer"` for every unit, `read_only: true`, non-empty objectives and completion criteria, and empty `depends_on` arrays. A single valid Explorer unit returns `admitted: false` with reason `single_unit_sequential`, directing the caller to the sequential path rather than reporting malformed input.
 
-`read_scope` is optional guidance only; overlaps are explicitly allowed. Do not provide `write_scope` or `write_intent` keys, even as empty values. Do not mark a batch or unit nested. The helper validates these explicit structural claims, not semantic independence: before admission the Orchestrator must confirm that no sibling result can change another unit's question, strategy, or safe completion condition. Reject any fixer role, any dependency in either direction, shared-write requirement, or second batch for the parent objective.
+`active_batches` is the caller/Orchestrator's attestation of the number of
+parallel batches already active for this objective: `0` means none are active, so
+this candidate may be admitted as the one; `1` means one is already active, so
+this candidate is rejected. The helper validates only the supplied count and
+cannot discover live batches system-wide.
+
+`read_scope` is optional guidance only; overlaps are explicitly allowed. Do not provide `write_scope` or `write_intent` keys, even as empty values, and do not mark a batch or unit nested. The helper validates explicit structural claims, not semantic independence: before admission, the Orchestrator must confirm that no sibling result can change another unit's question, strategy, or safe completion condition. Reject any fixer role, sibling dependency, or shared-write requirement.
 
 The helper emits one JSON verdict on stdout and makes no Herdr, Harvest, Jev, filesystem-state, or network calls. `mode: "admission"` returns `admitted`, a stable `reason`, and deterministic `checks`. `enabled` omitted is treated as disabled; `max_explorers` omitted defaults to three. Admission failure means sequential fallback, not task failure.
 
 ## Dispatch
 
-1. Decompose the investigation before prompting. Give every unit a stable ID, a distinct objective, independent completion criteria, and read-only scope guidance; validate the batch with `parallel_validate`.
-2. Resolve a distinct Explorer target for each unit. Before **each** prompt, use `herdr agent get` and confirm the agent is idle, in the current tab, and matches the settled Explorer harness, model, and effort. Reuse the settled Explorer configuration for unique names such as `explorer-2` and `explorer-3`; never choose a new model or effort for a sibling.
-3. Place additional Explorer panes in the delegated column while preserving user-owned panes. Once all targets are confirmed, dispatch the standalone unit prompts in quick succession, each using the normal `prompt --wait` lifecycle. Each handoff must state that the agent is a read-only Explorer and must not invoke orchestration, delegate, control panes, or change files or state.
-4. Keep sibling prompts independent. Do not include a sibling's prompt, progress, raw output, or presumed conclusion in another Explorer's handoff. The shared parent objective is context, not permission to couple unit strategies.
+1. Decompose the investigation before prompting. Give every unit a stable ID,
+   distinct bounded objective, independent completion criteria, and read-only
+   scope guidance; validate the batch with `parallel_validate`.
+2. Confirm the runtime preconditions before launching: `active_batches` is
+   attested as `0`, and no Fixer is active on this objective/task. Use
+   `herdr agent get <fixer-name>` to check the resolved Fixer's lifecycle; if an
+   active turn is working on this objective or idleness cannot be established,
+   do not launch the batch. Do not start a Fixer until the batch has converged
+   and its result and strategy are settled. The validator cannot prove Fixer
+   idleness or inspect live batches.
+3. Use distinct Explorer identities such as `explorer`, `explorer-2`, and
+   `explorer-3`, reusing the settled Explorer harness, model, and effort. Keep
+   every target in the current tab; cross-tab use is forbidden. Before each
+   prompt, run `herdr agent get` and confirm the target is idle and matches the
+   settled configuration. Never repurpose a Fixer agent or pane. Place Explorer
+   panes in the delegated area, preserve user-owned panes, and follow
+   [`STARTUP.md`](STARTUP.md) without assuming fixed geometry.
+4. Submit prompts in quick succession without waiting for siblings: validate A
+   with `herdr agent get`; submit A with `herdr agent prompt <name>`
+   (without `--wait`); validate B with `herdr agent get`; submit B the same
+   way; optionally validate and submit C. Only after all submissions may you
+   wait for or collect results (for example, `herdr agent wait <name>`, then
+   `herdr agent read <name> --source recent-unwrapped`). Do not pass `--wait`
+   on the submission commands themselves: a blocking wait between sibling
+   submissions serializes the batch. Sequential `--wait` on a single prompt
+   outside a parallel batch is unchanged.
 
 The shared per-session schema-v2 state remains unchanged: no batch, unit, prompt, result, or Harvest runtime values are added to `session-<cksum>.json`. The one objective-scoped `active_orchestration` remains the shared parent identity.
 
@@ -91,7 +119,7 @@ On resume, accepted results remain accepted and are not gratuitously rerun. Inco
 
 ## Explorer Gate interaction
 
-Converge and review the combined evidence first. If the optional Explorer Gate is enabled, the Orchestrator may make at most one call for the batch, using one compact summary that it has reviewed and marked `orchestrator_reviewed: true`. The gate's existing status, `evidence_sufficient`, `would_block`, shadow/active, and fallback semantics do not change for parallel use. Batch size does not multiply gate calls or extend the Explorer round cap.
+After synthesis and review of the combined evidence, the Orchestrator may make zero or one Explorer Gate call for the batch—never one per sibling. Zero is valid whenever the gate is disabled or the request is otherwise ineligible; at most one compact summary marked `orchestrator_reviewed: true` may be submitted. [`EXPLORER_GATE.md`](EXPLORER_GATE.md) is authoritative for eligibility and gate behavior, which do not change for parallel use. Batch size does not multiply calls or extend the Explorer round cap.
 
 ## Sequential implementation and completion
 

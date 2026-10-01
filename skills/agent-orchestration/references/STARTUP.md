@@ -145,7 +145,7 @@ lifecycle are defined in [`HARVEST.md`](HARVEST.md).
 
 ## Pane layout
 
-Delegated agents share one right-hand column, explorer above fixer:
+For ordinary two-role delegation, delegated agents share one right-hand column, Explorer above Fixer:
 
 ```text
 ┌──────────────────────────────┬──────────────────────┐
@@ -157,18 +157,29 @@ Delegated agents share one right-hand column, explorer above fixer:
 └──────────────────────────────┴──────────────────────┘
 ```
 
-Treat "one column, explorer on top" as an invariant to satisfy, not a sequence of
+For that two-role layout, treat "one column, Explorer on top" as an invariant to satisfy, not a sequence of
 splits to replay. The roles are not always created in the same order — a settled
 implementation goes straight to the fixer, so the fixer often exists before any
 explorer does — and placement has to reach the same layout whichever role arrived
 first.
 
-Stable position is the point. Anyone glancing at the screen, you or the user,
+In the two-role layout, stable position is the point. Anyone glancing at the screen, you or the user,
 should read the role off the position alone instead of checking which model is
-printed in which pane. Three columns, or an explorer sitting under a fixer, costs
-that on every look.
+printed in which pane. Three columns, or an Explorer sitting under a Fixer, costs
+that on every look in this two-role layout.
 
 Preserve existing user-owned panes when applying this layout.
+
+### Parallel Explorer batches
+
+For an admitted two- or three-Explorer batch in [`PARALLEL.md`](PARALLEL.md),
+use distinct names such as `explorer`, `explorer-2`, and `explorer-3`. Before
+each prompt, use `herdr agent get` to independently confirm that target is idle,
+in the current tab, and matches the settled Explorer harness, model, and effort.
+Additional Explorer panes may stack in the delegated area as space permits; the
+fixed-ratio pane examples below are for ordinary two-role placement only, not
+batch geometry. Never repurpose a Fixer agent or pane, use a cross-tab agent, or
+disturb user-owned panes.
 
 ## Resolution
 
@@ -201,22 +212,22 @@ Before using a delegated role:
    column rather than from the role you happen to be placing. Take the new pane
    id from `.result.pane.pane_id`.
 
-   **The column does not exist yet** — split the orchestrator once, to the
-   right. Whichever role you are placing holds the whole column until the other
-   one arrives:
+   **The column does not exist yet** — create the delegated column by splitting the
+   orchestrator once, to the right. The first agent occupies it until additional
+   agents are placed:
 
    ```bash
    herdr pane split --current --direction right --ratio 0.5 --cwd "$PWD" --no-focus
    ```
 
-   **The column already holds the other role** — split _that_ pane downward,
+   **The delegated column already contains an agent** — split that pane downward,
    never the orchestrator a second time:
 
    ```bash
    herdr pane split <occupied-column-pane-id> --direction down --ratio 0.5 --cwd "$PWD" --no-focus
    ```
 
-   The new pane is the lower one, which is where the fixer belongs. When the role
+   For the ordinary two-role layout, the new pane is the lower one, where the fixer belongs. When the role
    you are placing is the explorer — the fixer got here first — start it in the
    new pane, then exchange the two so the explorer ends up on top:
 
@@ -224,7 +235,7 @@ Before using a delegated role:
    herdr pane swap --source-pane <new-pane-id> --target-pane <fixer-pane-id>
    ```
 
-   Splitting the orchestrator to the right a second time is what puts the
+   In the two-role layout, splitting the orchestrator to the right a second time is what puts the
    explorer and fixer side by side in three columns. It also narrows every column
    past the width an agent's UI needs, and a column that cannot render is a
    column whose output you cannot read.
@@ -241,16 +252,16 @@ Before using a delegated role:
    prompting. Do not re-run `agent start` and do not give up on the role.
 9. Verify after startup with `herdr agent get <resolved-name>` that its `tab_id`
    equals `$HERDR_TAB_ID` and that its kind, model, and effort match the settled
-   configuration. Once both roles are live, confirm the order rather than
-   assuming the splits landed as intended:
+   configuration. For the ordinary two-role layout, once both roles are live, confirm the order rather than assuming the splits landed as intended:
 
    ```bash
    herdr pane neighbor --direction down --pane <explorer-pane-id>
    ```
 
-   It must return the fixer's pane. If it returns nothing or another pane, the
-   layout is wrong — correct it with `herdr pane swap` now, while you still know
-   which pane holds which role.
+   It must return the Fixer's pane. This neighbor check applies only to the ordinary
+   two-role layout; a parallel batch validates each Explorer individually with
+   `herdr agent get` (see "Parallel Explorer batches" above), not through one
+   Explorer/Fixer neighbor pair.
 
 If the kind, model, effort, pane, shutdown, or startup cannot be confirmed after
 the recovery in step 8, stop delegation for that role. Never silently fall back

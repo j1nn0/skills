@@ -38,7 +38,7 @@ class ParallelValidateTest(unittest.TestCase):
             "enabled": True,
             "max_explorers": 3,
             "objective": "Investigate the intermittent import failure",
-            "active_batches": 1,
+            "active_batches": 0,
             "units": units if units is not None else [self.unit("unit-1"), self.unit("unit-2")],
         }
         value.update(overrides)
@@ -106,6 +106,19 @@ class ParallelValidateTest(unittest.TestCase):
                 self.assertEqual(admitted, result["admitted"])
                 self.assertEqual(reason, result["reason"])
 
+    def test_active_batch_count_is_current_existing_batch_count(self):
+        cases = (
+            ("none_active", 0, True, "admitted"),
+            ("one_already_active", 1, False, "active_batch_limit"),
+        )
+        for name, active_batches, admitted, reason in cases:
+            with self.subTest(case=name):
+                result = self.parse_verdict(
+                    self.run_validator(self.admission(active_batches=active_batches))
+                )
+                self.assertEqual(admitted, result["admitted"])
+                self.assertEqual(reason, result["reason"])
+
     def test_enabled_defaults_to_disabled(self):
         payload = self.admission()
         del payload["enabled"]
@@ -155,7 +168,12 @@ class ParallelValidateTest(unittest.TestCase):
                 "nested_batch_forbidden",
             ),
             (
-                "second_active_batch",
+                "one_active_batch_already_exists",
+                self.admission(active_batches=1),
+                "active_batch_limit",
+            ),
+            (
+                "multiple_active_batches",
                 self.admission(active_batches=2),
                 "active_batch_limit",
             ),
@@ -269,19 +287,57 @@ class ParallelValidateTest(unittest.TestCase):
         self.assertEqual("failed_without_gaps", result["reason"])
 
     def test_invalid_accepted_result_is_not_ready(self):
-        result = self.parse_verdict(
-            self.run_validator(
-                self.convergence(
-                    [
-                        {"unit_id": "unit-1", "status": "accepted", "accepted_result": "<HERDR_RESULT>missing close"},
-                        {"unit_id": "unit-2", "status": "accepted", "accepted_result": self.herdr_result()},
-                    ]
-                )
-            )
+        cases = (
+            (
+                "malformed",
+                {
+                    "unit_id": "unit-1",
+                    "status": "accepted",
+                    "accepted_result": "<HERDR_RESULT>missing close",
+                },
+            ),
+            ("missing", {"unit_id": "unit-1", "status": "accepted"}),
         )
+        for name, bad_unit in cases:
+            with self.subTest(case=name):
+                units = [
+                    bad_unit,
+                    {
+                        "unit_id": "unit-2",
+                        "status": "accepted",
+                        "accepted_result": self.herdr_result(),
+                    },
+                ]
+                result = self.parse_verdict(
+                    self.run_validator(self.convergence(units))
+                )
+                self.assertFalse(result["ready"])
+                self.assertEqual("invalid_result", result["reason"])
+                self.assertEqual(["unit-2"], result["accepted_units"])
+                self.assertEqual(["unit-1"], result["incomplete_units"])
+                self.assertEqual(["unit-1"], result["recoverable_units"])
+                self.assertTrue(result["recoverable"])
+
+    def test_unknown_status_is_incomplete_and_recoverable(self):
+        units = [
+            {
+                "unit_id": "unit-1",
+                "status": "completed",
+                "gaps": ["Unsupported status cannot count as a failed result."],
+            },
+            {
+                "unit_id": "unit-2",
+                "status": "accepted",
+                "accepted_result": self.herdr_result(),
+            },
+        ]
+        result = self.parse_verdict(self.run_validator(self.convergence(units)))
         self.assertFalse(result["ready"])
-        self.assertEqual("invalid_result", result["reason"])
-        self.assertNotIn("unit-1", result["accepted_units"])
+        self.assertEqual("invalid_input", result["reason"])
+        self.assertEqual(["unit-2"], result["accepted_units"])
+        self.assertEqual(["unit-1"], result["incomplete_units"])
+        self.assertEqual(["unit-1"], result["recoverable_units"])
+        self.assertTrue(result["recoverable"])
 
     def test_convergence_rejects_unit_counts_outside_parallel_batch_range(self):
         for count in (1, 4):
