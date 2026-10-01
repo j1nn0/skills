@@ -1,0 +1,279 @@
+#!/usr/bin/env python3
+"""Deterministic admission and convergence checks for Parallel Explorers v1."""
+
+import json
+import sys
+
+DEFAULT_MAX_EXPLORERS = 3
+ALLOWED_MAX_EXPLORERS = (2, 3)
+USAGE = "usage: parallel_validate (read one JSON object from stdin)"
+
+
+def reject_json_constant(_value):
+    raise ValueError("non-standard JSON constant")
+
+
+def emit_json(value):
+    print(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+
+
+def nonempty_string(value):
+    return isinstance(value, str) and bool(value.strip())
+
+
+def admission_result(admitted, reason, checks):
+    return {"admitted": admitted, "reason": reason, "checks": checks}
+
+
+def convergence_result(ready, reason, accepted, failed, incomplete, gaps):
+    recoverable_units = failed + incomplete
+    return {
+        "ready": ready,
+        "reason": reason,
+        "accepted_units": accepted,
+        "failed_units": failed,
+        "incomplete_units": incomplete,
+        "gaps": gaps,
+        "recoverable_units": recoverable_units,
+        "recoverable": bool(recoverable_units),
+    }
+
+
+def no_write_intent(value):
+    if not isinstance(value, dict):
+        return False
+    if "write_scope" in value or "write_intent" in value:
+        return False
+    return True
+
+
+def read_scope_is_guidance(value):
+    if "read_scope" not in value:
+        return True
+    read_scope = value["read_scope"]
+    if isinstance(read_scope, str):
+        return nonempty_string(read_scope)
+    return (
+        isinstance(read_scope, list)
+        and all(nonempty_string(item) for item in read_scope)
+    )
+
+
+def validate_admission(data):
+    enabled = data.get("enabled", False)
+    if not isinstance(enabled, bool):
+        return admission_result(False, "invalid_enabled", {"enabled": False})
+    if not enabled:
+        return admission_result(False, "disabled", {"enabled": False})
+
+    max_explorers = data.get("max_explorers", DEFAULT_MAX_EXPLORERS)
+    max_valid = (
+        not isinstance(max_explorers, bool)
+        and isinstance(max_explorers, int)
+        and max_explorers in ALLOWED_MAX_EXPLORERS
+    )
+    checks = {
+        "enabled": True,
+        "max_explorers_valid": max_valid,
+        "overlapping_read_scopes_allowed": True,
+    }
+    if not max_valid:
+        return admission_result(False, "invalid_max_explorers", checks)
+
+    objective = data.get("objective")
+    units = data.get("units")
+    if not nonempty_string(objective):
+        checks["shared_parent_objective"] = False
+        return admission_result(False, "missing_objective", checks)
+    checks["shared_parent_objective"] = True
+    if not isinstance(units, list) or not all(isinstance(unit, dict) for unit in units):
+        checks["unit_records_valid"] = False
+        return admission_result(False, "invalid_units", checks)
+
+    unit_count = len(units)
+    checks["unit_count"] = unit_count
+    checks["unit_count_in_range"] = 2 <= unit_count <= max_explorers
+    checks["unique_unit_ids"] = (
+        all(nonempty_string(unit.get("unit_id")) for unit in units)
+        and len({unit.get("unit_id") for unit in units}) == unit_count
+    )
+    checks["explorer_only"] = all(unit.get("role") == "explorer" for unit in units)
+    checks["read_only"] = all(unit.get("read_only") is True for unit in units)
+    checks["no_write_intent"] = no_write_intent(data) and all(
+        no_write_intent(unit) for unit in units
+    )
+    checks["no_sibling_dependencies"] = all(
+        isinstance(unit.get("depends_on", []), list)
+        and not unit.get("depends_on", [])
+        for unit in units
+    )
+    checks["not_nested"] = data.get("nested", False) is False and all(
+        unit.get("nested", False) is False for unit in units
+    )
+    active_batches = data.get("active_batches")
+    checks["active_batch_limit"] = (
+        not isinstance(active_batches, bool)
+        and isinstance(active_batches, int)
+        and 0 <= active_batches <= 1
+    )
+    checks["unit_objectives_and_criteria"] = all(
+        nonempty_string(unit.get("objective"))
+        and nonempty_string(unit.get("completion_criteria"))
+        for unit in units
+    )
+    checks["read_scopes_guidance_only"] = all(
+        read_scope_is_guidance(unit) for unit in units
+    )
+    checks["nested_flags_valid"] = (
+        isinstance(data.get("nested", False), bool)
+        and all(isinstance(unit.get("nested", False), bool) for unit in units)
+    )
+    checks["dependency_fields_valid"] = all(
+        isinstance(unit.get("depends_on", []), list) for unit in units
+    )
+    checks["active_batches_field_valid"] = (
+        not isinstance(active_batches, bool) and isinstance(active_batches, int)
+    )
+
+    if not checks["unique_unit_ids"]:
+        return admission_result(False, "duplicate_or_missing_unit_id", checks)
+    if not checks["explorer_only"]:
+        return admission_result(False, "non_explorer_role", checks)
+    if not checks["read_only"]:
+        return admission_result(False, "read_only_required", checks)
+    if not checks["no_write_intent"]:
+        return admission_result(False, "write_intent_forbidden", checks)
+    if not checks["nested_flags_valid"] or not checks["not_nested"]:
+        return admission_result(False, "nested_batch_forbidden", checks)
+    if not checks["dependency_fields_valid"]:
+        return admission_result(False, "invalid_dependencies", checks)
+    if not checks["no_sibling_dependencies"]:
+        return admission_result(False, "sibling_dependency_forbidden", checks)
+    if not checks["unit_objectives_and_criteria"]:
+        return admission_result(False, "bounded_objective_required", checks)
+    if not checks["read_scopes_guidance_only"]:
+        return admission_result(False, "invalid_read_scope", checks)
+    if not checks["active_batches_field_valid"]:
+        return admission_result(False, "invalid_active_batches", checks)
+    if not checks["active_batch_limit"]:
+        return admission_result(False, "active_batch_limit", checks)
+    if unit_count == 1:
+        return admission_result(False, "single_unit_sequential", checks)
+    if unit_count < 2:
+        return admission_result(False, "too_few_explorers", checks)
+    if unit_count > max_explorers:
+        return admission_result(False, "too_many_explorers", checks)
+    return admission_result(True, "admitted", checks)
+
+
+def valid_herdr_result(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+    opening = "<HERDR_RESULT>"
+    closing = "</HERDR_RESULT>"
+    if value.count(opening) != 1 or value.count(closing) != 1:
+        return False
+    start = value.find(opening) + len(opening)
+    end = value.find(closing)
+    return start < end and bool(value[start:end].strip())
+
+
+def validate_convergence(data):
+    objective = data.get("objective")
+    units = data.get("units")
+    if not nonempty_string(objective) or not isinstance(units, list) or not units:
+        return convergence_result(False, "invalid_input", [], [], [], [])
+    if not 2 <= len(units) <= DEFAULT_MAX_EXPLORERS:
+        return convergence_result(False, "invalid_batch_size", [], [], [], [])
+    if not all(isinstance(unit, dict) for unit in units):
+        return convergence_result(False, "invalid_input", [], [], [], [])
+    unit_ids = [unit.get("unit_id") for unit in units]
+    if (
+        not all(nonempty_string(unit_id) for unit_id in unit_ids)
+        or len(set(unit_ids)) != len(unit_ids)
+    ):
+        return convergence_result(False, "invalid_input", [], [], [], [])
+
+    accepted = []
+    failed = []
+    incomplete = []
+    gaps = []
+    failed_without_gaps = False
+    invalid_result = False
+    invalid_status = False
+
+    for unit in units:
+        unit_id = unit["unit_id"]
+        status = unit.get("status")
+        if status == "accepted":
+            if not valid_herdr_result(unit.get("accepted_result")):
+                invalid_result = True
+            else:
+                accepted.append(unit_id)
+        elif status == "failed":
+            failed.append(unit_id)
+            unit_gaps = unit.get("gaps", [])
+            if not isinstance(unit_gaps, list):
+                invalid_status = True
+            elif not unit_gaps:
+                failed_without_gaps = True
+            elif not all(nonempty_string(gap) for gap in unit_gaps):
+                invalid_status = True
+            else:
+                gaps.extend({"unit_id": unit_id, "gap": gap} for gap in unit_gaps)
+            if "accepted_result" in unit and unit["accepted_result"] is not None:
+                if not valid_herdr_result(unit["accepted_result"]):
+                    invalid_result = True
+        elif isinstance(status, str) and status in {"incomplete", "pending", "running"}:
+            incomplete.append(unit_id)
+            if "accepted_result" in unit and unit["accepted_result"] is not None:
+                if not valid_herdr_result(unit["accepted_result"]):
+                    invalid_result = True
+        else:
+            invalid_status = True
+
+    if invalid_result:
+        return convergence_result(False, "invalid_result", accepted, failed, incomplete, gaps)
+    if invalid_status:
+        return convergence_result(False, "invalid_input", accepted, failed, incomplete, gaps)
+    if failed_without_gaps:
+        return convergence_result(False, "failed_without_gaps", accepted, failed, incomplete, gaps)
+    if incomplete:
+        return convergence_result(False, "incomplete_units", accepted, failed, incomplete, gaps)
+    if failed:
+        return convergence_result(True, "ready_with_gaps", accepted, failed, incomplete, gaps)
+    return convergence_result(True, "all_accepted", accepted, failed, incomplete, gaps)
+
+
+def invalid_input_result(mode):
+    if mode == "convergence":
+        return convergence_result(False, "invalid_input", [], [], [], [])
+    return admission_result(False, "invalid_input", {})
+
+
+def validate(data):
+    if not isinstance(data, dict):
+        return invalid_input_result(None)
+    mode = data.get("mode")
+    if mode == "admission":
+        return validate_admission(data)
+    if mode == "convergence":
+        return validate_convergence(data)
+    return invalid_input_result(mode)
+
+
+def main(argv):
+    if len(argv) != 1:
+        print(USAGE, file=sys.stderr)
+        return 2
+    try:
+        data = json.loads(sys.stdin.read(), parse_constant=reject_json_constant)
+    except (ValueError, TypeError, RecursionError):
+        emit_json(invalid_input_result(None))
+        return 0
+    emit_json(validate(data))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

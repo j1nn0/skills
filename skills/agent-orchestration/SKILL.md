@@ -114,10 +114,17 @@ changes never cause the harness, model, or effort question to be asked again.
 
 ## Concurrency
 
-Run the explorer and the fixer one at a time on the same task. While the fixer is
-working, keep every other change to the same working tree paused.
+Parallel read-only Explorer work is allowed only for units admitted under [`PARALLEL.md`](references/PARALLEL.md), to reduce investigation latency across independent units on the same repository state. Keep all writes, Fixer work, and Explorer–Fixer overlap serialized through the orchestrator.
 
 When in doubt, serialize work through the orchestrator.
+
+### Parallel Explorer batches
+
+[`PARALLEL.md`](references/PARALLEL.md) is authoritative for admission, dispatch, collection, resume, and convergence. Use only for two or three independent read-only Explorer units under one parent objective; a disabled or rejected batch falls back to sequential exploration.
+
+Give each unit a standalone prompt and validate each latest complete result independently. Do not share sibling raw outputs. When Harvest is available, claim each accepted result before reusing its pane. Preserve failures as explicit gaps and synthesize once in the orchestrator, retaining contradictions rather than voting.
+
+Run the optional Explorer Gate at most once after synthesis. Parallel investigation does not permit parallel Fixers, shared-tree writes, or skipping sequential implementation, diff review, verification, or the Completion Gate.
 
 ## Handoffs
 
