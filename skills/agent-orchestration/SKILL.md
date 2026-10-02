@@ -51,43 +51,17 @@ Delegation requires a Herdr-managed pane:
 test "${HERDR_ENV:-}" = 1
 ```
 
-If that fails, do the task yourself. Do not run a delegated agent in the
-orchestrator pane as a substitute.
+If that fails, do the task yourself. Do not run a delegated agent in the orchestrator pane as a substitute.
 
-All delegated agents must run in the orchestrator's current tab. Treat
-`$HERDR_TAB_ID` as a hard placement and reuse boundary.
+All delegated agents must run in the orchestrator's current tab. Treat `$HERDR_TAB_ID` as a hard placement and reuse boundary.
 
-The role configuration is scoped to the current top-level orchestrator's native
-Herdr agent session, not to one invocation of this skill, one user request, one
-task, or one delegation.
+Role configuration is scoped to the current top-level orchestrator's native Herdr agent session, not to one invocation, request, task, or delegation.
 
-Before asking the user for configuration, resolve the current orchestrator
-session by running `skills/agent-orchestration/scripts/sessionctl inspect`; follow
-[`STARTUP.md`](references/STARTUP.md) to interpret its result. A complete matching persisted configuration is
-authoritative: reuse it without asking again, even when the current context no
-longer contains the earlier configuration exchange.
+Before asking the user for configuration, resolve the current orchestrator session by running `skills/agent-orchestration/scripts/sessionctl inspect` and follow [`STARTUP.md`](references/STARTUP.md) to interpret the result. A complete matching persisted configuration is authoritative and is reused without asking again, even when the current context no longer contains the earlier configuration exchange. Ask only when STARTUP.md's session-state policy establishes that no complete configuration is available, then persist the settled values immediately.
 
-Invoking `agent-orchestration` again, receiving a new user request, completing a
-task, starting a new task, starting a new delegation unit, or compacting context
-does not begin a new orchestrator session.
+Read [`STARTUP.md`](references/STARTUP.md) before the first delegation of every invocation, and whenever a role's agent is missing, lives in another tab, has the wrong harness, model, or effort, or needs a pane created. It holds the session-state procedure, agent resolution steps, per-role configuration and start commands, and pane layout.
 
-Only when no complete matching persisted configuration exists, and no complete
-configuration is already unambiguously available in the current conversation,
-ask the user to select the harness, model, and effort for both roles. Persist
-the settled values immediately.
-
-Read [`STARTUP.md`](references/STARTUP.md) before the first delegation of every invocation
-of this skill so the persisted configuration is loaded before deciding whether
-to ask the user. Also read it whenever a role's agent is missing, lives in
-another tab, has the wrong harness, model, or effort, or needs a pane created.
-It holds the session-state procedure, agent resolution steps, per-role
-configuration and start commands, and pane layout.
-
-Harvest orchestration grouping is optional and independent of role
-configuration. Before the first delegated prompt of every invocation that will
-delegate, read [`HARVEST.md`](references/HARVEST.md) and follow its identity and capture
-lifecycle for the current objective. Harvest availability, failure, or identity
-changes never cause the harness, model, or effort question to be asked again.
+Harvest grouping is optional and independent of role configuration. Before the first delegated prompt of each invocation that will delegate, read [`HARVEST.md`](references/HARVEST.md) for the objective identity and capture lifecycle; Harvest availability, failure, or identity changes never cause the harness, model, or effort question to be asked again.
 
 ## Workflow
 
@@ -114,17 +88,13 @@ changes never cause the harness, model, or effort question to be asked again.
 
 ## Concurrency
 
-Parallel read-only Explorer work is allowed only for units admitted under [`PARALLEL.md`](references/PARALLEL.md), to reduce investigation latency across independent units on the same repository state. Keep all writes, Fixer work, and Explorer–Fixer overlap serialized through the orchestrator.
-
-When in doubt, serialize work through the orchestrator.
+Only read-only Explorer work admitted under [`PARALLEL.md`](references/PARALLEL.md) may run in parallel to reduce investigation latency across independent units on the same repository state; serialize all writes, Fixer work, and Explorer–Fixer overlap through the orchestrator, and when in doubt serialize work there.
 
 ### Parallel Explorer batches
 
-[`PARALLEL.md`](references/PARALLEL.md) is authoritative for admission, dispatch, collection, resume, and convergence. Use only for two or three independent read-only Explorer units under one parent objective; a disabled or rejected batch falls back to sequential exploration.
+[`PARALLEL.md`](references/PARALLEL.md) is authoritative for admission, dispatch, collection, resume, and convergence. Use only two or three independent read-only Explorer units under one parent objective; a disabled or rejected batch falls back to sequential exploration. Give each unit a standalone prompt, validate each latest complete result independently, and do not share sibling raw outputs. When Harvest is available, claim each accepted result before reusing its pane. Preserve failures as explicit gaps and synthesize once in the orchestrator, retaining contradictions rather than voting.
 
-Give each unit a standalone prompt and validate each latest complete result independently. Do not share sibling raw outputs. When Harvest is available, claim each accepted result before reusing its pane. Preserve failures as explicit gaps and synthesize once in the orchestrator, retaining contradictions rather than voting.
-
-Run the optional Explorer Gate at most once after synthesis. Parallel investigation does not permit parallel Fixers, shared-tree writes, or skipping sequential implementation, diff review, verification, or the Completion Gate.
+Run the optional Explorer Gate at most once after synthesis (see [`EXPLORER_GATE.md`](references/EXPLORER_GATE.md)). Parallel investigation does not permit parallel Fixers, shared-tree writes, or skipping sequential implementation, diff review, verification, or the Completion Gate.
 
 ## Handoffs
 
@@ -481,40 +451,15 @@ Then review the result yourself before deciding the next route.
 
 ### Session reuse
 
-Keep an agent's session for the whole unit: remaining questions, missing
-evidence, a review correction, a test failure caused by the current
-implementation, and completion of an unfinished part all belong to it. Repeated
-corrections stay in the same unit.
+Keep an agent's session for the whole unit: remaining questions, missing evidence, a review correction, a test failure caused by the current implementation, and completion of an unfinished part belong to it; repeated corrections stay in the same unit.
 
-A new unit is also the normal context-reset boundary for substantial work. When
-the next unit begins, do not retain a long prior session merely because the same
-role will handle it. Restart so the new unit begins with the standalone handoff
-constructed from settled state, unless the next work is genuinely still the
-same unit.
+A new unit is the normal context-reset boundary for substantial work. Restart so the new unit begins with the standalone handoff constructed from settled state, unless the next work is genuinely still the same unit.
 
-The accepted result of the current unit must already have been claimed according
-to [`HARVEST.md`](references/HARVEST.md) before that agent is stopped or reused.
+The accepted result of the current unit must already have been claimed according to [`HARVEST.md`](references/HARVEST.md) before that agent is stopped or reused.
 
-Restart the agent when the next prompt opens a different unit — a materially
-different problem, another independently reviewable slice of a larger plan, a
-strategy that has been abandoned, or work that prior context would bias. Do not
-use a harness-native new-session command when it could fall back to that
-harness's default model or effort instead of preserving the role's settled
-configuration.
+Restart for a materially different problem, another independently reviewable slice of a larger plan, an abandoned strategy, or work that prior context would bias. Do not use a harness-native new-session command when it could fall back to that harness's default model or effort instead of preserving the role's settled configuration.
 
-Before stopping the agent, record its pane and the role's settled harness,
-model, and effort. Stop it using the selected harness's normal exit mechanism;
-do not assume one harness's exit command is valid for another.
-
-Wait until it disappears from `herdr agent list`, confirm its pane has returned
-to an available interactive shell, then restart the same role in that pane using
-the start command in [`STARTUP.md`](references/STARTUP.md). Explicitly pass the role's
-settled model and effort using the selected harness's arguments; never rely on
-the harness's defaults.
-
-After restart, verify with `herdr agent get <name>` that the agent is in the
-current tab and that its harness, model, and effort match the settled role
-configuration before sending the first prompt of the new unit.
+Restart the same role with its settled harness, model, and effort. Before the first prompt of the new unit, verify with `herdr agent get <name>` that the agent is in the current tab and its harness, model, and effort match the settled role configuration. Use [`STARTUP.md`](references/STARTUP.md) §Resolution for the stop, wait-for-shell, restart, and verification procedure.
 
 ### Reading results
 
@@ -622,21 +567,11 @@ unnecessary access to secrets without explicit permission.
 
 ### Optional Jev completion gate
 
-[`JEV.md`](references/JEV.md) is authoritative for the optional gate. Run it only after the
-orchestrator has reviewed the actual diff and project verification has passed;
-Jev cannot override deterministic failures, policy, or this skill's invariants.
-If Jev is unavailable, invalid, uncertain, or disabled, continue the existing
-workflow conservatively; removing it leaves orchestration behavior unchanged.
+[`JEV.md`](references/JEV.md) is authoritative for the optional gate. Run the Completion Gate only after the orchestrator reviews the actual diff and deterministic project verification passes; Jev cannot override deterministic failures, policy, or this skill's invariants. If Jev is disabled, unavailable, invalid, or uncertain, continue the existing workflow conservatively; disabled or unavailable Jev leaves behavior unchanged. Report unavailability concisely without failing the task.
 
 #### Shadow mode
 
-In enabled `shadow` mode, work, review, and verify normally, then decide the next
-action without consulting Jev. Invoke Jev at most once per eligible decision,
-and only when the gate would genuinely run; never on deterministic failure,
-incomplete review, or an unsafe payload. Record `action_match` and
-`completion_match`, then continue with the original decision. **The Jev result MUST NOT cause the Orchestrator to
-revise the decision in shadow mode.** Report unavailable Jev concisely without
-failing the task.
+In enabled `shadow` mode, work, review, and verify normally, then decide the next action without consulting Jev. Invoke Jev at most once per eligible decision, and only when the gate would genuinely run; never on deterministic failure, incomplete review, or an unsafe payload. Record `action_match` and `completion_match`, then continue with the original decision. **The Jev result MUST NOT cause the Orchestrator to revise the decision in shadow mode.**
 
 Use this report template:
 
@@ -659,24 +594,16 @@ completion_match: ((both complete) or (both not complete))
 
 ### Optional Jev Explorer gate
 
-[`EXPLORER_GATE.md`](references/EXPLORER_GATE.md) is authoritative for the optional post-Explorer evidence gate. Run it only after the Explorer returns and you have reviewed and settled its evidence.
-Set `orchestrator_reviewed: true` only after that review. Disabled or incomplete-review gates do not start `cmd`.
+[`EXPLORER_GATE.md`](references/EXPLORER_GATE.md) is authoritative for the optional post-Explorer evidence gate. Run it only after the Explorer returns and you have reviewed and settled its evidence. Set `orchestrator_reviewed: true` only after that review. Disabled or incomplete-review gates do not start `cmd`.
 
-In `shadow`, record the result without changing the route.
-In `active`, only a decided, confident `explore_more` may hold the fixer handoff.
-`proceed_to_fix` is not authorization; neither mode auto-applies.
-For uncertain or unavailable results, continue from your evidence review or escalate.
+In `shadow`, record the result without changing the route. In `active`, only a decided, confident `explore_more` may hold the fixer handoff. `proceed_to_fix` is not authorization; neither mode auto-applies. For invalid, uncertain, or unavailable results, continue from your evidence review or escalate.
 
-This gate precedes implementation; the existing Completion Gate remains post-diff-review and deterministic verification.
+The Explorer Gate precedes implementation.
 
 On normal completion:
 
-- complete the Harvest objective lifecycle in [`HARVEST.md`](references/HARVEST.md),
-  clearing the recorded active orchestration once you have confirmed the
-  objective's completion criteria — before the final user-facing report where
-  practical — and also when the user explicitly abandons the objective;
-- leave the persisted role configuration intact for the lifetime of the current
-  orchestrator native session;
+- complete the Harvest objective lifecycle in [`HARVEST.md`](references/HARVEST.md), clearing the recorded active orchestration once you have confirmed the objective's completion criteria — before the final user-facing report where practical — and also when the user explicitly abandons the objective;
+- leave the persisted role configuration intact for the lifetime of the current orchestrator native session;
 - leave correctly configured delegated agents running for reuse;
 - leave panes intact, including user-owned panes.
 
