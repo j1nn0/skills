@@ -156,6 +156,30 @@ class SessionctlTest(unittest.TestCase):
             env=env,
         )
 
+
+    def assert_mutations_refused_without_writing(self, cases, reason):
+        path = self.state_path()
+        for name, args, document, raw in cases:
+            with self.subTest(mutation=name):
+                path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                contents = raw if raw is not None else json.dumps(document, indent=2) + "\n"
+                path.write_text(contents, encoding="utf-8")
+                os.chmod(path.parent, 0o755)
+                before = path.read_bytes()
+                file_stat = path.stat()
+                directory_stat = path.parent.stat()
+
+                result = self.parse_result(self.run_sessionctl(*args), ok=False)
+                self.assertEqual(reason, result["reason"])
+                self.assertFalse(result["changed"])
+                self.assertFalse(result["identity_matched"])
+                self.assertTrue(result["state_available"])
+                self.assertEqual(before, path.read_bytes())
+                self.assertEqual(file_stat.st_ino, path.stat().st_ino)
+                self.assertEqual(file_stat.st_mtime_ns, path.stat().st_mtime_ns)
+                self.assertEqual(0o755, path.parent.stat().st_mode & 0o777)
+                self.assertEqual(directory_stat.st_mtime_ns, path.parent.stat().st_mtime_ns)
+
     def test_inspect_without_state_is_side_effect_free(self):
         result = self.inspect()
         self.assertEqual("inspect", result["action"])
@@ -204,17 +228,53 @@ class SessionctlTest(unittest.TestCase):
         self.assertEqual(IDENTITY, result["orchestrator_session"])
         self.assertEqual(role(), result["explorer"])
 
-    def test_mutation_overwrites_mismatched_identity_at_same_path(self):
+    def test_mutations_refuse_mismatched_identity_without_writing(self):
         other = dict(IDENTITY, value="/different/session.jsonl")
-        path = self.write_state(state(identity=other))
-        result = self.parse_result(self.set_role("fixer", "updated", "new-model", "medium"), ok=True)
-        written = self.read_written_state(result)
-        self.assertTrue(result["changed"])
-        self.assertEqual(IDENTITY, written["orchestrator_session"])
-        self.assertEqual(role(), written["explorer"])
-        self.assertEqual(role("updated", "new-model", "medium"), written["fixer"])
-        self.assertEqual(path, Path(result["state_file"]))
-        self.assertTrue(self.inspect()["identity_matched"])
+        foreign_explorer = role("foreign-explorer", "foreign-model", "low")
+        foreign_fixer = role("foreign-fixer", "other-model", "medium")
+
+        def active(status):
+            return {
+                "id": ACTIVE_ID,
+                "label": "foreign orchestration",
+                "status": status,
+                "created_at": "2026-06-01T12:00:00Z",
+            }
+
+        cases = [
+            (
+                "set-role",
+                ("set-role", "--role", "fixer", "--harness", "updated", "--model", "new-model", "--effort", "medium"),
+                state(identity=other, explorer=foreign_explorer, fixer=foreign_fixer),
+                None,
+            ),
+            (
+                "orchestration.set",
+                ("orchestration", "set", "--id", ACTIVE_ID, "--label", "task"),
+                state(identity=other, explorer=foreign_explorer, fixer=foreign_fixer),
+                None,
+            ),
+            (
+                "orchestration.clear",
+                ("orchestration", "clear"),
+                state(identity=other, explorer=foreign_explorer, fixer=foreign_fixer),
+                None,
+            ),
+            (
+                "orchestration.interrupt",
+                ("orchestration", "interrupt"),
+                state(identity=other, explorer=foreign_explorer, fixer=foreign_fixer, active=active("active")),
+                None,
+            ),
+            (
+                "orchestration.resume",
+                ("orchestration", "resume"),
+                state(identity=other, explorer=foreign_explorer, fixer=foreign_fixer, active=active("interrupted")),
+                None,
+            ),
+            ("set validation", ("orchestration", "set", "--id", "bad", "--label", ""), state(identity=other), None),
+        ]
+        self.assert_mutations_refused_without_writing(cases, "identity_mismatch")
 
     def test_inspect_refuses_missing_agent_session_without_fallback_or_writes(self):
         self.set_herdr_identity(None)
@@ -251,17 +311,21 @@ class SessionctlTest(unittest.TestCase):
         self.assertIsNone(result["explorer"])
         self.assertEqual("{not-json\n", path.read_text(encoding="utf-8"))
 
-    def test_successful_mutation_overwrites_unreadable_state(self):
-        path = self.write_state({}, raw="{not-json\n")
-        result = self.parse_result(self.set_role("fixer", "claude", "sonnet", "low"), ok=True)
-        written = self.read_written_state(result)
-        self.assertTrue(result["changed"])
-        self.assertEqual(2, written["schema_version"])
-        self.assertEqual(IDENTITY, written["orchestrator_session"])
-        self.assertEqual({field: "" for field in ROLE_FIELDS}, written["explorer"])
-        self.assertEqual(role("claude", "sonnet", "low"), written["fixer"])
-        self.assertIsNone(written["active_orchestration"])
-        self.assertTrue(self.inspect()["identity_matched"])
+    def test_mutations_refuse_unreadable_state_without_writing(self):
+        raw = "{not-json\n"
+        cases = [
+            (
+                "set-role",
+                ("set-role", "--role", "fixer", "--harness", "claude", "--model", "sonnet", "--effort", "low"),
+                {},
+                raw,
+            ),
+            ("orchestration.set", ("orchestration", "set", "--id", ACTIVE_ID, "--label", "task"), {}, raw),
+            ("orchestration.clear", ("orchestration", "clear"), {}, raw),
+            ("orchestration.interrupt", ("orchestration", "interrupt"), {}, raw),
+            ("orchestration.resume", ("orchestration", "resume"), {}, raw),
+        ]
+        self.assert_mutations_refused_without_writing(cases, "unreadable_state")
 
     def test_inspect_malformed_active_is_reported_without_repair(self):
         document = state()

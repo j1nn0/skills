@@ -46,6 +46,11 @@ Interpret the compact JSON result:
 create the state directory, upgrade the schema, repair malformed values, or
 write. Do not use a state file unless `identity_matched` is true.
 
+Mutations create state only when no file exists and update only when identity
+matches; mismatches and unreadable whole-state files refuse with `ok: false`,
+the respective reason and `changed: false`, leaving the file and directory
+untouched.
+
 If `session_available` is false (including when `agent_session` is absent), do
 not substitute `$HERDR_PANE_ID`, `$HERDR_TAB_ID`, or `$HERDR_WORKSPACE_ID`.
 Reuse a complete role configuration only when it is unambiguous in the current

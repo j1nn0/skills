@@ -276,6 +276,13 @@ def read_state(path, identity):
     }
 
 
+def refusal_reason(state):
+    reason = state["reason"]
+    if reason is None and state["state_available"] and not state["identity_matched"]:
+        reason = "identity_mismatch"
+    return reason
+
+
 def configuration_complete(state):
     if not state["identity_matched"] or state["explorer"] is None or state["fixer"] is None:
         return False
@@ -408,17 +415,13 @@ def run_action(action, values):
     path = session_file(identity)
     state = read_state(path, identity)
 
-    if action == "inspect":
-        reason = state["reason"]
-        if reason is None and state["state_available"] and not state["identity_matched"]:
-            reason = "identity_mismatch"
+    if action in {"inspect", "orchestration.get"}:
+        reason = refusal_reason(state)
         return report(action, identity, path, state, ok=reason is None, reason=reason)
 
-    if action == "orchestration.get":
-        reason = state["reason"]
-        if reason is None and state["state_available"] and not state["identity_matched"]:
-            reason = "identity_mismatch"
-        return report(action, identity, path, state, ok=reason is None, reason=reason)
+    reason = refusal_reason(state)
+    if reason is not None:
+        return fail(action, identity, path, state, reason)
 
     if action == "set-role":
         if not all(nonempty_string(values[field]) for field in ROLE_FIELDS):
