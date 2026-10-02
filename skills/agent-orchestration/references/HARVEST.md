@@ -1,8 +1,25 @@
 # Harvest orchestration capture
 
 Optional Harvest integration for `agent-orchestration`. This file owns the
-orchestration objective identity, its persisted lifecycle, capability
-negotiation, runtime discovery, and result claim protocol.
+orchestration objective identity, its persisted lifecycle, claim ordering,
+and graceful degradation. Deterministic Harvest protocol mechanics live in
+`scripts/harvestctl`; persisted session state lives in
+`scripts/sessionctl`.
+
+The ordinary interaction is:
+
+```text
+decide objective identity using this policy
+→ persist identity using sessionctl
+→ harvestctl doctor
+→ delegate work
+→ accept delegated result
+→ harvestctl claim
+```
+
+Do not reproduce plugin discovery, capability validation, runtime locator
+parsing, environment sanitization, or exit-code interpretation by hand.
+`harvestctl` is the tested adapter for those mechanics.
 
 Read this before the first delegated prompt of every invocation that will
 delegate. Reuse or replace the current objective identity according to the
@@ -93,7 +110,8 @@ is valid.
 
 Use `skills/agent-orchestration/scripts/sessionctl` for persisted lifecycle
 state. It handles storage only; the orchestrator applies the policy in this section
-and must not edit the state file directly.
+and must not edit the state file directly. `harvestctl` never reads or writes
+session state, never decides objective reuse, and never calls `sessionctl`.
 
 ### Scope and lifetime
 
@@ -107,8 +125,10 @@ agent.
 Do not create one merely because the skill was invoked, a user sent a message,
 context was compacted, a role pane was created, or a role agent restarted.
 Create it immediately before the first actual delegated prompt of one coherent
-top-level objective, and only after capability negotiation under "Capability
-negotiation" succeeds. Record it before sending that prompt with
+top-level objective, and only after
+`skills/agent-orchestration/scripts/harvestctl doctor --role <explorer|fixer>`
+reports the integration available for that role. Record it before sending that
+prompt with
 `skills/agent-orchestration/scripts/sessionctl orchestration set --id UUID --label LABEL`;
 the command stores it as `active` with its creation timestamp.
 
@@ -170,139 +190,78 @@ Do not clear it because one explorer or fixer unit finished, and do not clear
 it between explorer and fixer. Do not accumulate completed-orchestration
 history in this file; Harvest Results already snapshot completed identity.
 
-## Discovery
+## Harvest availability and claims via harvestctl
 
-Use only supported public surfaces. First:
+`harvestctl` speaks the Harvest protocol; this file decides identity. The
+wrapper rediscovers runtime state on every run and keeps no persistent state.
+Consume its normalized JSON, never native capture exit codes or internals.
 
-```bash
-herdr plugin list --plugin j1nn0.herdr-harvest --json
-```
-
-The plugin objects are under `.result.plugins`. Require an exact installed
-plugin:
-
-```text
-plugin_id == j1nn0.herdr-harvest
-enabled == true
-plugin_root is non-empty
-```
-
-Take `plugin_root` from that output and use it for every later command. Do not
-hard-code a managed checkout path and do not infer a plugin directory from XDG
-paths. The reported `version` field is diagnostic only.
-
-Never gate the integration on a Harvest version number. Do not write or rely on
-a rule of the form "Harvest >= 0.x.y is sufficient". Capability negotiation is
-the only authority.
-
-If no exact enabled plugin with a non-empty `plugin_root` is available, Harvest
-integration is unavailable and ordinary orchestration continues.
-
-## Capability negotiation
-
-Run:
+### doctor
 
 ```bash
-node "<plugin_root>/src/bin/capture.ts" --capabilities
+skills/agent-orchestration/scripts/harvestctl doctor --role <explorer|fixer>
 ```
 
-It prints one JSON line and touches neither the environment, the database, nor
-Herdr:
+`doctor` is a side-effect free preflight: it checks plugin and capability
+compatibility for the requested role. It never captures a result, never writes
+session or Harvest state, and never requires a runtime locator — a missing
+locator before Harvest has run does not mean protocol incompatibility.
+
+It prints exactly one JSON object:
 
 ```json
-{"protocol":"harvest-capture","protocolVersion":1,"features":["orchestration-claim","runtime-locator"],"roles":["explorer","fixer"]}
+{"ok":true,"available":true,"claim_supported":true,"reason":null,"role":"explorer"}
 ```
 
-Require all of:
+An unavailable integration keeps process exit 0 with `available` and
+`claim_supported` false and a stable `reason` such as `plugin_unavailable`,
+`capability_probe_failed`, `capability_invalid`, `protocol_mismatch`,
+`protocol_version_mismatch`, `feature_missing`, or `role_unsupported`.
+Exit 2 means invalid wrapper usage. When unavailable, ordinary orchestration
+continues and no new `active_orchestration` is created.
 
-```text
-protocol == harvest-capture
-protocolVersion == 1
-features contains orchestration-claim
-features contains runtime-locator
-roles contains the role being claimed
-```
+### claim
 
-`protocolVersion` must equal `1`. A higher, unknown protocol version is not
-compatible merely because it is numerically greater.
-
-If Node cannot execute the entrypoint, or the probe fails or prints anything
-else, Harvest integration is unavailable and ordinary orchestration continues.
-Do not create a new `active_orchestration` unless capability negotiation has
-succeeded.
-
-## Runtime locator
-
-For an actual claim, resolve the plugin config directory through Herdr rather
-than computing it:
+After a delegated result settles and the Orchestrator accepts it, claim before
+prompting or reusing that role again:
 
 ```bash
-herdr plugin config-dir j1nn0.herdr-harvest
+skills/agent-orchestration/scripts/harvestctl claim \
+  --pane "<delegated-pane-id>" \
+  --id "<uuid-v4>" \
+  --label "<stable-label>" \
+  --role <explorer|fixer>
 ```
 
-It prints one raw path on stdout followed by a newline; it is not JSON. Read:
+Pass the delegated pane (never the orchestrator pane) with the current stable
+id, label, and role. `claim` independently revalidates plugin, capabilities,
+role support, runtime locator, and socket identity, builds a sanitized child
+environment, invokes capture, and normalizes the verdict — do not run `doctor`
+immediately before every claim.
 
-```text
-<config-dir>/orchestration-capture-runtime.json
+It prints exactly one JSON object with `claimed` true only on a successful
+association:
+
+```json
+{"ok":true,"claimed":true,"status":"duplicate","claim_status":"already_claimed","reason":null}
 ```
 
-Require:
+`claimed` is true for a fresh or idempotent duplicate association
+(`already_claimed` is success, not an error). A conflict reports
+`claimed` false with `status` `conflict` and `reason` `claim_conflict`. An
+integration that cannot attempt the claim reports `status` `unavailable`;
+a skipped or failed capture reports its own `status` with a stable `reason`.
+Malformed or inconsistent native responses fail closed. Valid wrapper
+verdicts exit 0 so optional Harvest failures never fail shell control flow;
+exit 2 means invalid wrapper input.
 
-```text
-protocol == harvest-runtime-locator
-protocolVersion == 1
-pluginId == j1nn0.herdr-harvest
-stateDir is a non-empty absolute path
-socketPath is a non-empty string
-socketPath == the current HERDR_SOCKET_PATH
-```
-
-`updatedAtMs` may be read as diagnostic metadata but must never override the
-socket identity check. The socket comparison is what proves the locator
-describes the Herdr server this orchestrator is actually talking to.
-
-If the locator is missing, malformed, or points at another socket, Harvest
-integration is unavailable for this claim. Do not guess another state directory
-and do not reproduce Herdr's internal state-directory calculation. A missing
-locator can simply mean Harvest has not run yet in this Herdr session, so a
-later claim in the same objective may still succeed.
-
-## Claiming a completed delegated result
-
-The only authoritative orchestration association is this explicit claim:
-
-```bash
-env -u HARVEST_STATE_DIR \
-  HERDR_PLUGIN_STATE_DIR="<locator.stateDir>" \
-  node "<plugin_root>/src/bin/capture.ts" \
-    --pane "<delegated-pane-id>" \
-    --orchestration-id "<uuid-v4>" \
-    --orchestration-label "<stable-label>" \
-    --orchestration-role "<explorer|fixer>"
-```
-
-Rules:
-
-- `HARVEST_STATE_DIR` must actually be absent from the child environment.
-  Harvest resolves its state directory as
-  `HARVEST_STATE_DIR ?? HERDR_PLUGIN_STATE_DIR`, so a leftover
-  `HARVEST_STATE_DIR` silently wins and the claim lands in the wrong database.
-  Equivalent environment handling is fine as long as the variable is genuinely
-  unset for the child.
-- The current `HERDR_SOCKET_PATH` must be preserved in the child process;
-  Harvest needs it to reach Herdr and read the pane.
-- `--pane` is the delegated agent's pane id, never the orchestrator's pane.
-- The three orchestration options are all-or-nothing: supplying only some of
-  them is a usage error that captures nothing.
-- `--orchestration-id` must be a canonical lowercase UUIDv4; uppercase or
-  prefixed tokens are rejected.
-- `--orchestration-label` must be 1-256 non-blank Unicode code points and is
-  stored verbatim.
-- `--orchestration-role` is exactly `explorer` or `fixer`, case-sensitive.
+A conflict must never be repaired by changing the UUID, changing the label,
+overwriting the existing claim, or retrying with guessed metadata. Record the
+integration problem and continue the engineering workflow.
 
 ### Transport boundaries
 
-The UUID, label, and role travel only through these CLI arguments. Never
+The UUID, label, and role travel only through the explicit claim arguments. Never
 transport orchestration identity through pane metadata tokens, `state_labels`,
 workspace/tab/pane inference, native session inference, environment variables
 such as `HARVEST_ORCHESTRATION_ID`, prompt embedding, terminal-output parsing,
@@ -312,48 +271,13 @@ There is no metadata token, TTL, or sequence number in this design; do not
 reintroduce one. Never claim the long-lived top-level orchestrator pane — only
 `explorer` and `fixer` are Harvest orchestration roles.
 
-## Claim results
-
-The command prints one JSON summary line on stdout. Outcomes:
-
-```text
-exit 0  captured | duplicate | skipped
-exit 1  failed (capture or runtime failure)
-exit 2  invalid arguments
-exit 3  conflict
-```
-
-Top-level `status` is one of `captured`, `duplicate`, `conflict`, `skipped`, or
-`failed`. An `orchestration` object of the form
-`{"status":"...","id":"..."}` appears only with `captured` or `duplicate`,
-and its `status` is either `claimed` or `already_claimed`.
-
-Treat only these as success:
-
-```text
-status == captured  or  status == duplicate
-and orchestration.status == claimed  or  already_claimed
-```
-
-`already_claimed` is successful idempotency, not an error: it means the stored
-row already holds the identical id, label, and role.
-
-A conflict is `exit 3` with `status == conflict`, plus
-`requestedOrchestrationId` and `existingOrchestrationId`; it carries no
-`orchestration` object. Harvest refuses only the attribution — the delegated
-Result itself is still stored.
-
-A conflict must never be repaired by changing the UUID, changing the label,
-overwriting the existing claim, or retrying with guessed metadata. Record the
-integration problem and continue the engineering workflow.
-
 ## Graceful degradation
 
 None of these may fail the delegated engineering task:
 
 - `skipped`;
 - `failed`;
-- malformed JSON;
+- malformed responses;
 - a missing or stale locator;
 - a capability mismatch;
 - a conflict;
