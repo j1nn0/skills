@@ -13,75 +13,61 @@ Harvest orchestration identity and capture are intentionally separated into
 The persisted session state is the authority for whether role configuration has
 already been settled. Do not rely only on conversational memory.
 
-At the start of every invocation of this skill, before asking the user about
-harnesses, models, or effort:
+At the start of every invocation, before asking about harnesses, models, or
+effort, run the read-only inspection:
 
-1. Run:
+```bash
+skills/agent-orchestration/scripts/sessionctl inspect
+```
 
-   ```bash
-   herdr pane get "$HERDR_PANE_ID"
-   ```
+`sessionctl` resolves the current top-level orchestrator identity from Herdr's
+native `agent_session` (`source`, `kind`, and `value`). The nested `agent` label
+is not part of that identity. The tool owns the lookup and exact identity
+comparison; do not reimplement these mechanics or edit the state file by hand.
 
-2. Read the returned pane's `agent_session` object. Use these fields as the
-   current top-level orchestrator session identity:
+Interpret the compact JSON result:
 
-   - `source`
-   - `kind`
-   - `value`
+- `session_available`: a native session identity was available.
+- `state_available`: the session-state file exists; it may still be unreadable
+  or belong to a different identity.
+- `identity_matched`: the persisted identity exactly matches this session.
+  Never reuse role values unless this is true.
+- `configuration_complete`: both roles have non-empty `harness`, `model`, and
+  `effort`.
+- `schema_version`: `1`, `2`, or `null` (no readable state); version `1` is valid.
+- `active_orchestration`: the stored objective identity, or `null`.
+- `active_orchestration_status`: `absent`, `valid`, or `malformed`. A malformed
+  active value is reported as `null` and does not invalidate complete matching
+  role settings.
+- `ok` and `reason`: whether the read verdict succeeded. A refusal does not
+  write or repair state.
 
-   The `agent` label is diagnostic metadata, not part of the identity.
+`inspect` and `sessionctl orchestration get` are side-effect free: they do not
+create the state directory, upgrade the schema, repair malformed values, or
+write. Do not use a state file unless `identity_matched` is true.
 
-3. If `agent_session` is absent, do not treat `$HERDR_PANE_ID`,
-   `$HERDR_TAB_ID`, or `$HERDR_WORKSPACE_ID` as a substitute session identity.
-   Reuse a complete role configuration only when it is still unambiguous in the
-   current conversation. Otherwise ask the user. Do not persist new state until
-   Herdr exposes a native `agent_session`.
+If `session_available` is false (including when `agent_session` is absent), do
+not substitute `$HERDR_PANE_ID`, `$HERDR_TAB_ID`, or `$HERDR_WORKSPACE_ID`.
+Reuse a complete role configuration only when it is unambiguous in the current
+conversation. Otherwise ask the user. Do not persist new state until Herdr
+exposes a native `agent_session`.
 
-4. When `agent_session` is present, use:
+When `identity_matched` and `configuration_complete` are both true, load those
+role values and do not ask again. Otherwise, when `session_available` is true
+and a complete configuration is unambiguously available in the current
+conversation, persist it immediately and continue without asking. This covers
+sessions configured before persisted state support.
 
-   ```text
-   ${XDG_STATE_HOME:-$HOME/.local/state}/agent-orchestration/
-   ```
+If neither a complete matching state nor unambiguous carryover is available,
+follow "Role configuration", ask once, and persist the settled values
+immediately.
 
-   as the state directory.
+Persist each settled role with its own `sessionctl set-role` call, for example
+`skills/agent-orchestration/scripts/sessionctl set-role --role explorer --harness H --model M --effort E`.
+When the user explicitly changes one role's harness, model, or effort, update
+that role immediately and leave the other role unchanged.
 
-   Build a deterministic file key from the exact `source`, `kind`, and `value`.
-   A portable option on macOS and Linux is the first two fields emitted by
-   POSIX `cksum` for these three values joined with newlines:
-
-   ```bash
-   printf '%s\n%s\n%s\n' '<source>' '<kind>' '<value>' |
-     cksum |
-     awk '{print $1 "-" $2}'
-   ```
-
-   Use the resulting key as:
-
-   ```text
-   <state-dir>/session-<key>.json
-   ```
-
-   `cksum` is only a filename key. Never trust the key alone.
-
-5. If the state file exists, read it and verify that
-   `orchestrator_session.source`, `orchestrator_session.kind`, and
-   `orchestrator_session.value` exactly equal the current `agent_session`.
-   This exact comparison is mandatory because the filename key is not the
-   identity itself.
-
-6. A state file is usable only when both roles contain non-empty `harness`,
-   `model`, and `effort` values. When it is valid, load those values and do not
-   ask the user again.
-
-7. If no valid matching state exists but a complete configuration is already
-   unambiguously available in the current conversation, persist that
-   configuration immediately and continue without asking again. This handles
-   sessions that were configured before persisted state support was added.
-
-8. Otherwise follow "Role configuration", ask once, and persist the answer
-   immediately.
-
-Persist this shape:
+`sessionctl` reads and writes this shape:
 
 ```json
 {
@@ -106,42 +92,36 @@ Persist this shape:
 ```
 
 `active_orchestration` is either `null` or the object defined in
-[`HARVEST.md`](HARVEST.md). Its lifecycle is independent of the role
-configuration.
+[`HARVEST.md`](HARVEST.md). Its lifecycle is independent of role configuration.
+Use `sessionctl orchestration get`, `set`, `interrupt`, `resume`, and `clear` to
+read or change this stored field; lifecycle decisions belong to
+[`HARVEST.md`](HARVEST.md). `sessionctl` owns atomic writes and user-only file
+permissions; a refused operation leaves state unchanged.
 
-Create the state directory with user-only permissions where practical and write
-the JSON atomically, for example through a temporary file followed by `mv`.
 Never store provider credentials, tokens, secrets, prompts, investigation
-results, or implementation details in this state. Never store any Harvest
-runtime value either: plugin root, plugin config directory, Harvest state
-directory, socket path, capability output, agent reports, findings, or Result
-text. Rediscover each of those every time it is needed.
-
-When the user explicitly changes a role's harness, model, or effort, update the
-same state file immediately. Leave the other role unchanged.
-
-Do not delete the state file when a task or unit completes. A new native
-orchestrator conversation receives a different `agent_session` identity and
-therefore a different state key.
+results, implementation details, or Harvest runtime values: plugin root, plugin
+configuration directory, Harvest state directory, socket path, capability
+output, agent reports, findings, or Result text. Rediscover runtime values each
+time they are needed. Do not delete the session-state file when a task or unit
+completes; a new native orchestrator conversation has its own session identity.
 
 ### Schema version 1 compatibility
 
-A state file written with `"schema_version": 1` has no `active_orchestration`
-field and is still a fully valid role configuration. Never ask the user for
-harness, model, or effort again merely because the file is version 1 or has no
-orchestration field.
+A state file with `"schema_version": 1` and no `active_orchestration` field is a
+fully valid role configuration. If its identity matches and configuration is
+complete, reuse it; never ask again only because it is version 1 or lacks the
+orchestration field. The read-only commands do not upgrade it. On the next
+successful state mutation, `sessionctl` bundles the version-2 upgrade and
+`"active_orchestration": null` with the requested change in one atomic write,
+preserving the values of `orchestrator_session`, `explorer`, and `fixer`. Do not
+run a separate migration or edit the file by hand.
 
-Upgrade it the next time the file has to be written for any reason: set
-`"schema_version"` to `2`, add `"active_orchestration": null`, and leave the
-`orchestrator_session`, `explorer`, and `fixer` objects byte-for-byte
-equivalent. The upgrade is one atomic write, not a separate migration pass,
-and it happens before an objective is recorded.
+If `active_orchestration` is malformed, inspection reports its status as
+`malformed` and its value as `null`; the role configuration remains usable when
+complete and identity-matched. The next successful state write repairs only
+that field to `null` in the same atomic write as the requested change. The
+conforming object and lifecycle are defined in [`HARVEST.md`](HARVEST.md).
 
-If `active_orchestration` alone is present but malformed — not an object and
-not `null`, or missing a conforming `id`, `label`, `status`, or `created_at` —
-discard and replace only that field with `null`. Never invalidate an
-otherwise-valid role configuration because of it. The conforming object and its
-lifecycle are defined in [`HARVEST.md`](HARVEST.md).
 
 ## Pane layout
 

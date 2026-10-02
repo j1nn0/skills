@@ -49,6 +49,15 @@ through it; `explorer` and `fixer` never hand work directly to each other.
 The skill requires `HERDR_ENV=1`. Herdr pane and agent mechanics remain the responsibility of the
 existing `herdr` skill.
 
+For session-state policy and reuse rules, see [`references/STARTUP.md`](references/STARTUP.md).
+From the repository root, inspect the session or persist a confirmed role selection (`H`, `M`,
+and `E` stand for the selected values):
+
+```sh
+skills/agent-orchestration/scripts/sessionctl inspect
+skills/agent-orchestration/scripts/sessionctl set-role --role explorer --harness H --model M --effort E
+```
+
 ## Files
 
 | File | Contents |
@@ -60,6 +69,7 @@ existing `herdr` skill.
 | `references/RECOVERY.md` | Submission failures, timeout, `blocked`, and stuck-agent handling. |
 | `references/PARALLEL.md` | Policy for bounded, read-only parallel Explorer batches, admission, result collection, and orchestrator convergence. |
 | `scripts/parallel_validate` | Pipe one JSON object on stdin, for example `printf '%s\n' "$json" | scripts/parallel_validate`; `mode` is `admission` or `convergence` (payloads in `references/PARALLEL.md`). |
+| `scripts/sessionctl` | Stdlib-only session-state inspector and role/orchestration persistence CLI; see `references/STARTUP.md` for policy. |
 | `references/JEV.md` | Completion Gate policy, with the multi-gate overview and Explorer Gate pointer. |
 | `references/EXPLORER_GATE.md` | Optional post-Explorer evidence-sufficiency policy, thresholds, conservative action rules, and integration. |
 | `scripts/jevctl` | Stdlib-only CLI for `doctor`, `completion-gate`, and `explorer-gate`; `doctor` makes no model request. |

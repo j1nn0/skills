@@ -62,8 +62,8 @@ Herdr agent session, not to one invocation of this skill, one user request, one
 task, or one delegation.
 
 Before asking the user for configuration, resolve the current orchestrator
-session identity and load its persisted role configuration as described in
-[`STARTUP.md`](references/STARTUP.md). A complete matching persisted configuration is
+session by running `skills/agent-orchestration/scripts/sessionctl inspect`; follow
+[`STARTUP.md`](references/STARTUP.md) to interpret its result. A complete matching persisted configuration is
 authoritative: reuse it without asking again, even when the current context no
 longer contains the earlier configuration exchange.
 

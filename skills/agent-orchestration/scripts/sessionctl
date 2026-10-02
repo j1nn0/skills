@@ -1,0 +1,505 @@
+#!/usr/bin/env python3
+"""Read and update deterministic per-session orchestration state."""
+
+import datetime
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+USAGE = """usage:
+  sessionctl inspect
+  sessionctl set-role --role {explorer|fixer} --harness H --model M --effort E
+  sessionctl orchestration get
+  sessionctl orchestration set --id UUID --label LABEL
+  sessionctl orchestration interrupt
+  sessionctl orchestration resume
+  sessionctl orchestration clear"""
+
+ROLES = ("explorer", "fixer")
+ROLE_FIELDS = ("harness", "model", "effort")
+ACTIVE_FIELDS = ("id", "label", "status", "created_at")
+UUID4_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+)
+ISO8601_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$"
+)
+CKSUM_POLY = 0x04C11DB7
+
+
+def nonempty_string(value):
+    return isinstance(value, str) and bool(value.strip())
+
+
+def reject_json_constant(_value):
+    raise ValueError("non-standard JSON constant")
+
+
+def emit_json(value):
+    print(json.dumps(value, separators=(",", ":")))
+
+
+def usage_error():
+    print(USAGE, file=sys.stderr)
+    return 2
+
+
+def parse_options(args, allowed):
+    values = {}
+    index = 0
+    while index < len(args):
+        option = args[index]
+        if option not in allowed or option in values or index + 1 >= len(args):
+            return None
+        values[option] = args[index + 1]
+        index += 2
+    if set(values) != set(allowed):
+        return None
+    return values
+
+
+def parse_args(argv):
+    args = argv[1:]
+    if args == ["inspect"]:
+        return "inspect", {}
+    if args and args[0] == "set-role":
+        values = parse_options(args[1:], {"--role", "--harness", "--model", "--effort"})
+        if values is None or values["--role"] not in ROLES:
+            return None
+        return "set-role", {
+            "role": values["--role"],
+            "harness": values["--harness"],
+            "model": values["--model"],
+            "effort": values["--effort"],
+        }
+    if len(args) >= 2 and args[:2] == ["orchestration", "get"] and len(args) == 2:
+        return "orchestration.get", {}
+    if len(args) >= 2 and args[:2] == ["orchestration", "set"]:
+        values = parse_options(args[2:], {"--id", "--label"})
+        if values is None:
+            return None
+        return "orchestration.set", {"id": values["--id"], "label": values["--label"]}
+    if len(args) == 2 and args[0] == "orchestration" and args[1] in {"interrupt", "resume", "clear"}:
+        return "orchestration." + args[1], {}
+    return None
+
+
+def state_directory():
+    xdg_state_home = os.environ.get("XDG_STATE_HOME")
+    if xdg_state_home:
+        base = Path(xdg_state_home)
+    else:
+        base = Path(os.environ.get("HOME") or str(Path.home())) / ".local" / "state"
+    return base / "agent-orchestration"
+
+
+def crc_step(crc, byte):
+    crc ^= byte << 24
+    for _ in range(8):
+        if crc & 0x80000000:
+            crc = ((crc << 1) ^ CKSUM_POLY) & 0xFFFFFFFF
+        else:
+            crc = (crc << 1) & 0xFFFFFFFF
+    return crc
+
+
+def posix_cksum(data):
+    """Return POSIX cksum's CRC, including its length-suffix processing."""
+    crc = 0
+    for byte in data:
+        crc = crc_step(crc, byte)
+    length = len(data)
+    while length:
+        crc = crc_step(crc, length & 0xFF)
+        length >>= 8
+    return crc ^ 0xFFFFFFFF
+
+
+def session_file(identity):
+    identity_bytes = (
+        identity["source"] + "\n" + identity["kind"] + "\n" + identity["value"] + "\n"
+    ).encode("utf-8")
+    key = "{}-{}".format(posix_cksum(identity_bytes), len(identity_bytes))
+    return state_directory() / ("session-" + key + ".json")
+
+
+def resolve_session():
+    pane_id = os.environ.get("HERDR_PANE_ID")
+    if pane_id is None or pane_id == "":
+        return None
+    herdr = shutil.which("herdr")
+    if herdr is None:
+        return None
+    try:
+        completed = subprocess.run(
+            [herdr, "pane", "get", pane_id],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        return None
+    if completed.returncode != 0:
+        return None
+    try:
+        response = json.loads(completed.stdout, parse_constant=reject_json_constant)
+        session = response["result"]["pane"]["agent_session"]
+    except (ValueError, TypeError, KeyError):
+        return None
+    if not isinstance(session, dict):
+        return None
+    identity = {key: session.get(key) for key in ("source", "kind", "value")}
+    if not all(nonempty_string(identity[key]) for key in identity):
+        return None
+    # The nested agent key and the rest of Herdr's response are intentionally ignored.
+    return identity
+
+
+def empty_role():
+    return {field: "" for field in ROLE_FIELDS}
+
+
+def normalize_role(value):
+    if not isinstance(value, dict):
+        return empty_role()
+    return {
+        field: value.get(field) if isinstance(value.get(field), str) else ""
+        for field in ROLE_FIELDS
+    }
+
+
+def valid_uuid4(value):
+    return isinstance(value, str) and UUID4_RE.fullmatch(value) is not None
+
+
+def valid_label(value):
+    if not isinstance(value, str) or not value.strip() or len(value) > 256:
+        return False
+    return not any(char in value for char in "\r\n\u0085\u2028\u2029")
+
+
+def valid_created_at(value):
+    if not isinstance(value, str) or ISO8601_RE.fullmatch(value) is None:
+        return False
+    try:
+        parsed = datetime.datetime.fromisoformat(value[:-1] + "+00:00" if value.endswith("Z") else value)
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None and parsed.utcoffset() is not None
+
+
+def normalize_active(value):
+    if not isinstance(value, dict) or set(value) != set(ACTIVE_FIELDS):
+        return None
+    if (
+        not valid_uuid4(value.get("id"))
+        or not valid_label(value.get("label"))
+        or value.get("status") not in ("active", "interrupted")
+        or not valid_created_at(value.get("created_at"))
+    ):
+        return None
+    return {field: value[field] for field in ACTIVE_FIELDS}
+
+
+def empty_read(state_available=False, readable=True, schema_version=None, reason=None):
+    return {
+        "state_available": state_available,
+        "readable": readable,
+        "schema_version": schema_version,
+        "identity_matched": False,
+        "explorer": None,
+        "fixer": None,
+        "active_orchestration": None,
+        "active_orchestration_status": "absent",
+        "reason": reason,
+    }
+
+
+def read_state(path, identity):
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return empty_read()
+    except (OSError, UnicodeError):
+        return empty_read(state_available=True, readable=False, reason="unreadable_state")
+    try:
+        document = json.loads(raw, parse_constant=reject_json_constant)
+    except (ValueError, TypeError):
+        return empty_read(state_available=True, readable=False, reason="unreadable_state")
+    if not isinstance(document, dict):
+        return empty_read(state_available=True, readable=False, reason="unreadable_state")
+
+    if "schema_version" in document:
+        version = document["schema_version"]
+    else:
+        version = 2 if "active_orchestration" in document else 1
+    if type(version) is not int or version not in (1, 2):
+        return empty_read(state_available=True, readable=False, reason="unreadable_state")
+
+    stored_identity = document.get("orchestrator_session")
+    identity_matched = (
+        isinstance(stored_identity, dict)
+        and all(nonempty_string(stored_identity.get(key)) for key in ("source", "kind", "value"))
+        and all(stored_identity.get(key) == identity[key] for key in ("source", "kind", "value"))
+    )
+    explorer = normalize_role(document.get("explorer"))
+    fixer = normalize_role(document.get("fixer"))
+    if "active_orchestration" not in document:
+        active = None
+        active_status = "absent"
+    else:
+        raw_active = document["active_orchestration"]
+        if raw_active is None:
+            active = None
+            active_status = "valid"
+        else:
+            active = normalize_active(raw_active)
+            active_status = "valid" if active is not None else "malformed"
+
+    return {
+        "state_available": True,
+        "readable": True,
+        "schema_version": version,
+        "identity_matched": identity_matched,
+        "explorer": explorer,
+        "fixer": fixer,
+        "active_orchestration": active,
+        "active_orchestration_status": active_status,
+        "reason": None,
+    }
+
+
+def configuration_complete(state):
+    if not state["identity_matched"] or state["explorer"] is None or state["fixer"] is None:
+        return False
+    return all(
+        nonempty_string(state[role][field])
+        for role in ROLES
+        for field in ROLE_FIELDS
+    )
+
+
+def envelope(action, identity, path, state, ok=True, reason=None, changed=False):
+    if identity is None:
+        state_file = None
+        state_available = False
+        schema_version = None
+        identity_matched = False
+        orchestrator_session = None
+        explorer = None
+        fixer = None
+        active = None
+        active_status = "absent"
+        complete = False
+    else:
+        state_file = str(path)
+        state_available = state["state_available"]
+        schema_version = state["schema_version"]
+        identity_matched = state["identity_matched"]
+        orchestrator_session = identity
+        explorer = state["explorer"]
+        fixer = state["fixer"]
+        active = state["active_orchestration"]
+        active_status = state["active_orchestration_status"]
+        complete = configuration_complete(state)
+    return {
+        "ok": ok,
+        "action": action,
+        "reason": reason,
+        "state_file": state_file,
+        "schema_version": schema_version,
+        "session_available": identity is not None,
+        "state_available": state_available,
+        "identity_matched": identity_matched,
+        "configuration_complete": complete,
+        "orchestrator_session": orchestrator_session,
+        "explorer": explorer,
+        "fixer": fixer,
+        "active_orchestration": active,
+        "active_orchestration_status": active_status,
+        "changed": changed,
+    }
+
+
+def report(action, identity, path, state, ok=True, reason=None, changed=False):
+    result = envelope(action, identity, path, state, ok=ok, reason=reason, changed=changed)
+    emit_json(result)
+    if not ok and reason:
+        print("sessionctl: " + reason, file=sys.stderr)
+    return 0
+
+
+def default_mutable_state(identity, read):
+    if read["state_available"] and read["readable"]:
+        explorer = read["explorer"] or empty_role()
+        fixer = read["fixer"] or empty_role()
+        active = read["active_orchestration"]
+    else:
+        explorer = empty_role()
+        fixer = empty_role()
+        active = None
+    return {
+        "schema_version": 2,
+        "orchestrator_session": {
+            "source": identity["source"],
+            "kind": identity["kind"],
+            "value": identity["value"],
+        },
+        "explorer": dict(explorer),
+        "fixer": dict(fixer),
+        "active_orchestration": active,
+    }
+
+
+def mutable_view(document):
+    return {
+        "state_available": True,
+        "readable": True,
+        "schema_version": 2,
+        "identity_matched": True,
+        "explorer": document["explorer"],
+        "fixer": document["fixer"],
+        "active_orchestration": document["active_orchestration"],
+        "active_orchestration_status": "valid",
+        "reason": None,
+    }
+
+
+def write_state(path, document):
+    serialized = json.dumps(document, indent=2) + "\n"
+    directory = path.parent
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(directory, 0o700)
+    fd, temp_name = tempfile.mkstemp(prefix=".sessionctl-", suffix=".tmp", dir=str(directory))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as temp_file:
+            temp_file.write(serialized)
+        os.chmod(temp_name, 0o600)
+        # No lock is used: a same-directory atomic replace prevents partial files;
+        # concurrent writers are last-replace-wins by design.
+        os.replace(temp_name, path)
+    finally:
+        try:
+            os.unlink(temp_name)
+        except FileNotFoundError:
+            pass
+
+
+def created_at_now():
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def fail(action, identity, path, state, reason):
+    return report(action, identity, path, state, ok=False, reason=reason)
+
+
+def run_action(action, values):
+    identity = resolve_session()
+    if identity is None:
+        return report(action, None, None, empty_read(), ok=False, reason="no_session")
+
+    path = session_file(identity)
+    state = read_state(path, identity)
+
+    if action == "inspect":
+        reason = state["reason"]
+        if reason is None and state["state_available"] and not state["identity_matched"]:
+            reason = "identity_mismatch"
+        return report(action, identity, path, state, ok=reason is None, reason=reason)
+
+    if action == "orchestration.get":
+        reason = state["reason"]
+        if reason is None and state["state_available"] and not state["identity_matched"]:
+            reason = "identity_mismatch"
+        return report(action, identity, path, state, ok=reason is None, reason=reason)
+
+    if action == "set-role":
+        if not all(nonempty_string(values[field]) for field in ROLE_FIELDS):
+            return fail(action, identity, path, state, "invalid_role_value")
+        document = default_mutable_state(identity, state)
+        document[values["role"]] = {
+            field: values[field].strip() for field in ROLE_FIELDS
+        }
+        try:
+            write_state(path, document)
+        except (OSError, UnicodeError, ValueError):
+            return fail(action, identity, path, state, "write_failed")
+        return report(action, identity, path, mutable_view(document), changed=True)
+
+    if action == "orchestration.set":
+        if not valid_uuid4(values["id"]):
+            return fail(action, identity, path, state, "invalid_id")
+        if not valid_label(values["label"]):
+            return fail(action, identity, path, state, "invalid_label")
+        document = default_mutable_state(identity, state)
+        document["active_orchestration"] = {
+            "id": values["id"],
+            "label": values["label"],
+            "status": "active",
+            "created_at": created_at_now(),
+        }
+        try:
+            write_state(path, document)
+        except (OSError, UnicodeError, ValueError):
+            return fail(action, identity, path, state, "write_failed")
+        return report(action, identity, path, mutable_view(document), changed=True)
+
+    if action == "orchestration.clear":
+        if (
+            state["readable"]
+            and (not state["state_available"] or (
+                state["identity_matched"]
+                and state["schema_version"] == 2
+                and state["active_orchestration_status"] == "valid"
+                and state["active_orchestration"] is None
+            ))
+        ):
+            return report(action, identity, path, state, changed=False)
+        document = default_mutable_state(identity, state)
+        document["active_orchestration"] = None
+        try:
+            write_state(path, document)
+        except (OSError, UnicodeError, ValueError):
+            return fail(action, identity, path, state, "write_failed")
+        return report(action, identity, path, mutable_view(document), changed=True)
+
+    if action in {"orchestration.interrupt", "orchestration.resume"}:
+        active = state["active_orchestration"]
+        if state["active_orchestration_status"] == "malformed":
+            return fail(action, identity, path, state, "malformed_active_orchestration")
+        if active is None:
+            return fail(action, identity, path, state, "no_active_orchestration")
+        expected = "active" if action.endswith("interrupt") else "interrupted"
+        desired = "interrupted" if action.endswith("interrupt") else "active"
+        if active["status"] == desired:
+            return report(action, identity, path, state, changed=False)
+        if active["status"] != expected:
+            return fail(action, identity, path, state, "invalid_active_status")
+        document = default_mutable_state(identity, state)
+        document["active_orchestration"]["status"] = desired
+        try:
+            write_state(path, document)
+        except (OSError, UnicodeError, ValueError):
+            return fail(action, identity, path, state, "write_failed")
+        return report(action, identity, path, mutable_view(document), changed=True)
+
+    return usage_error()
+
+
+def main(argv):
+    parsed = parse_args(argv)
+    if parsed is None:
+        return usage_error()
+    action, values = parsed
+    return run_action(action, values)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

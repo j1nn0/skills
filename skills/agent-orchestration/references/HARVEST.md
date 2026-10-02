@@ -91,6 +91,10 @@ objective:
 Allowed `status` values are exactly `active` and `interrupted`. No other value
 is valid.
 
+Use `skills/agent-orchestration/scripts/sessionctl` for persisted lifecycle
+state. It handles storage only; the orchestrator applies the policy in this section
+and must not edit the state file directly.
+
 ### Scope and lifetime
 
 One `active_orchestration` represents one coherent top-level engineering
@@ -104,12 +108,15 @@ Do not create one merely because the skill was invoked, a user sent a message,
 context was compacted, a role pane was created, or a role agent restarted.
 Create it immediately before the first actual delegated prompt of one coherent
 top-level objective, and only after capability negotiation under "Capability
-negotiation" succeeds. Persist it atomically before that prompt is sent.
+negotiation" succeeds. Record it before sending that prompt with
+`skills/agent-orchestration/scripts/sessionctl orchestration set --id UUID --label LABEL`;
+the command stores it as `active` with its creation timestamp.
 
 ### Reuse
 
-Before creating one, decide whether a valid existing `active_orchestration`
-already represents the current objective. Reuse it when the current work is
+Before creating one, run `skills/agent-orchestration/scripts/sessionctl orchestration get`
+and check whether a valid existing `active_orchestration` represents the current
+objective. Reuse it when the current work is
 clearly a continuation — for example continuing the same unfinished task,
 resuming after an interruption, continuing after context compaction, moving
 from explorer to fixer for the same objective, starting another bounded unit of
@@ -140,21 +147,24 @@ a different label or role snapshot for the same id as a conflict.
 
 ### Interruption and resume
 
-When the orchestrator gets an explicit opportunity to record a pause, set
-`status` to `interrupted` and keep the id and label. If the process or the user
-interrupts abruptly before that update lands, leaving `status` as `active` is
-acceptable. The invariant to protect is: never clear `active_orchestration`
-merely because work stopped temporarily.
+When the orchestrator gets an explicit opportunity to record a pause, run
+`skills/agent-orchestration/scripts/sessionctl orchestration interrupt`. It sets
+`status` to `interrupted` and keeps the id, label, and creation timestamp. If the
+process or the user interrupts abruptly before that update lands, leaving
+`status` as `active` is acceptable. Never clear `active_orchestration` merely
+because work stopped temporarily.
 
-When the same objective resumes, reuse the same id and label and set `status`
-back to `active`.
+When the same objective resumes, reuse the same id and label and run
+`skills/agent-orchestration/scripts/sessionctl orchestration resume` to set
+`status` back to `active`.
 
 ### Completion
 
-Set `active_orchestration` to `null` only after the orchestrator itself has
+Run `skills/agent-orchestration/scripts/sessionctl orchestration clear` to set
+`active_orchestration` to `null` only after the orchestrator itself has
 confirmed the top-level objective's completion criteria, or the user has
-explicitly abandoned or cancelled the objective. Persist that update
-atomically, before the user-facing final report where practical.
+explicitly abandoned or cancelled the objective. Persist that update before the
+user-facing final report where practical.
 
 Do not clear it because one explorer or fixer unit finished, and do not clear
 it between explorer and fixer. Do not accumulate completed-orchestration
