@@ -26,7 +26,7 @@ Apply this decision contract:
 
 Never reuse role values from persisted state unless `identity_matched` is true.
 
-`inspect` is side-effect free: it does not create the state directory, upgrade the schema, or write. Mutations create state only when no file exists and update only when identity matches; mismatches and unreadable whole-state files refuse with `ok: false`, `changed: false`, leaving the file and directory untouched. A refusal does not write or repair state.
+`inspect` is side-effect free: it does not create the state directory, upgrade the schema, or write. Mutations create state only when no file exists and update only when identity matches; mismatches and unreadable whole-state files refuse with `ok: false`, `changed: false`, leaving the file and directory untouched.
 
 Persist each settled role with its own `sessionctl set-role` call, for example `skills/agent-orchestration/scripts/sessionctl set-role --role explorer --harness H --model M --effort E`. When the user explicitly changes one role's harness, model, or effort, update that role immediately and leave the other role unchanged.
 
@@ -34,7 +34,7 @@ Never store provider credentials, tokens, secrets, prompts, investigation result
 
 ### State file versions
 
-State files with `schema_version` 1 or 2 are valid. Reuse a complete identity-matched configuration from either without asking. Read-only commands never rewrite the file; mutations write schema version 2. Do not migrate or edit the file by hand.
+State files with `schema_version` 1 or 2 are valid. Reuse a complete identity-matched configuration from either without asking. Read-only commands never rewrite the file; mutations write schema version 2. Unrecognized top-level fields from older versions are ignored and are not carried forward by the next mutation. Do not migrate or edit the file by hand.
 
 ## Pane layout
 

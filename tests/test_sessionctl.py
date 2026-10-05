@@ -30,6 +30,24 @@ def state(identity=None, explorer=None, fixer=None, version=2):
     }
 
 
+# Older schema-v2 files may still carry the obsolete active_orchestration key,
+# valid, null, or malformed. It is inert legacy input and must never invalidate
+# role configuration.
+LEGACY_VALUES = (
+    None,
+    {
+        "id": "123e4567-e89b-42d3-a456-426614174000",
+        "label": "legacy objective",
+        "status": "active",
+        "created_at": "2026-06-01T12:00:00Z",
+    },
+    {"status": "malformed"},
+    "not-an-object",
+    ["unexpected"],
+    42,
+)
+
+
 def legacy_state(active):
     document = state()
     document["active_orchestration"] = active
@@ -154,7 +172,6 @@ class SessionctlTest(unittest.TestCase):
             env=env,
         )
 
-
     def assert_mutations_refused_without_writing(self, cases, reason):
         path = self.state_path()
         for name, args, document, raw in cases:
@@ -224,22 +241,13 @@ class SessionctlTest(unittest.TestCase):
         self.assertEqual(original, path.read_bytes())
 
     def test_inspect_ignores_legacy_extra_field_values(self):
-        legacy_values = (
-            None,
-            {
-                "id": "123e4567-e89b-42d3-a456-426614174000",
-                "label": "legacy objective",
-                "status": "active",
-                "created_at": "2026-06-01T12:00:00Z",
-            },
-            {"status": "malformed"},
-        )
-        for legacy_value in legacy_values:
+        for legacy_value in LEGACY_VALUES:
             with self.subTest(legacy_value=legacy_value):
                 path = self.write_state(legacy_state(legacy_value))
                 original = path.read_bytes()
                 result = self.inspect()
                 self.assertTrue(result["ok"])
+                self.assertEqual(2, result["schema_version"])
                 self.assertTrue(result["identity_matched"])
                 self.assertTrue(result["configuration_complete"])
                 self.assertEqual(role(), result["explorer"])
@@ -314,7 +322,6 @@ class SessionctlTest(unittest.TestCase):
             ),
         ]
         self.assert_mutations_refused_without_writing(cases, "unreadable_state")
-
 
     def test_session_key_is_deterministic_distinct_and_matches_posix_cksum(self):
         first = self.inspect()["state_file"]
@@ -395,26 +402,25 @@ class SessionctlTest(unittest.TestCase):
         self.assertFalse((self.xdg / "agent-orchestration").exists())
 
     def test_set_role_drops_legacy_field_and_preserves_other_role(self):
-        original = legacy_state(
-            {
-                "id": "123e4567-e89b-42d3-a456-426614174000",
-                "label": "legacy objective",
-                "status": "active",
-                "created_at": "2026-06-01T12:00:00Z",
-            }
-        )
-        self.write_state(original)
-        result = self.parse_result(
-            self.set_role("explorer", "updated", "new-model", "low"), ok=True
-        )
-        written = self.read_written_state(result)
-        self.assertEqual(2, written["schema_version"])
-        self.assertEqual(
-            {"schema_version", "orchestrator_session", "explorer", "fixer"},
-            set(written),
-        )
-        self.assertEqual(role("updated", "new-model", "low"), written["explorer"])
-        self.assertEqual(original["fixer"], written["fixer"])
+        for legacy_value in LEGACY_VALUES:
+            with self.subTest(legacy_value=legacy_value):
+                original = legacy_state(legacy_value)
+                self.write_state(original)
+                result = self.parse_result(
+                    self.set_role("explorer", "updated", "new-model", "low"), ok=True
+                )
+                self.assertTrue(result["changed"])
+                self.assertTrue(result["configuration_complete"])
+                written = self.read_written_state(result)
+                self.assertEqual(2, written["schema_version"])
+                self.assertEqual(
+                    {"schema_version", "orchestrator_session", "explorer", "fixer"},
+                    set(written),
+                )
+                self.assertEqual(IDENTITY, written["orchestrator_session"])
+                self.assertEqual(role("updated", "new-model", "low"), written["explorer"])
+                self.assertEqual(original["fixer"], written["fixer"])
+                self.assertTrue(self.inspect()["configuration_complete"])
 
     def test_atomic_replace_permissions_and_no_partial_write_on_refusal(self):
         directory = self.xdg / "agent-orchestration"

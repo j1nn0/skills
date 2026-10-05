@@ -182,6 +182,9 @@ def read_state(path, identity):
     if type(version) is not int or version not in (1, 2):
         return empty_read(state_available=True, readable=False, reason="unreadable_state")
 
+    # Only the identity and role fields are read. Other top-level keys, including
+    # obsolete fields written by earlier versions, are inert and never invalidate
+    # the configuration; the next mutation does not carry them forward.
     stored_identity = document.get("orchestrator_session")
     identity_matched = (
         isinstance(stored_identity, dict)
