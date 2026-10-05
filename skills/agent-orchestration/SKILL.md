@@ -61,30 +61,24 @@ Before asking the user for configuration, resolve the current orchestrator sessi
 
 Read [`STARTUP.md`](references/STARTUP.md) before the first delegation of every invocation, and whenever a role's agent is missing, lives in another tab, has the wrong harness, model, or effort, or needs a pane created. It holds the session-state procedure, agent resolution steps, per-role configuration and start commands, and pane layout.
 
-Harvest grouping is optional and independent of role configuration. Before the first delegated prompt of each invocation that will delegate, read [`HARVEST.md`](references/HARVEST.md) for the objective identity and capture lifecycle; Harvest availability, failure, or identity changes never cause the harness, model, or effort question to be asked again.
-
 ## Workflow
 
 1. Define the objective, constraints, scope, and completion criteria.
-2. Before the first delegated prompt of the objective, follow
-   [`HARVEST.md`](references/HARVEST.md): reuse or create the objective identity when
-   Harvest is available, then claim each accepted delegated result before that
-   agent is prompted again or reused.
-3. Route to investigation, implementation, or direct handling using the
+2. Route to investigation, implementation, or direct handling using the
    delegation boundaries below. Handle work yourself when it is trivial, local,
    and low-risk enough that delegation would cost more than it returns.
-4. If investigation is needed, delegate one appropriately sized investigation
+3. If investigation is needed, delegate one appropriately sized investigation
    unit to the explorer and evaluate its evidence and conclusions.
-5. Decide the implementation strategy and scope yourself.
-6. Before non-trivial implementation, size the work into bounded units using
+4. Decide the implementation strategy and scope yourself.
+5. Before non-trivial implementation, size the work into bounded units using
    "Unit sizing". Keep the overall plan yourself and select only the current
    unit for delegation.
-7. Delegate the current bounded implementation unit to the fixer.
-8. Review the actual diff and verification results yourself.
-9. Route follow-up work according to "Review and retry".
-10. Repeat from step 3, stopping at the bound in "Two attempts without
-    progress".
-11. Confirm the completion criteria yourself.
+6. Delegate the current bounded implementation unit to the fixer.
+7. Review the actual diff and verification results yourself.
+8. Route follow-up work according to "Review and retry".
+9. Repeat from step 2, stopping at the bound in "Two attempts without
+   progress".
+10. Confirm the completion criteria yourself.
 
 ## Concurrency
 
@@ -92,7 +86,7 @@ Only read-only Explorer work admitted under [`PARALLEL.md`](references/PARALLEL.
 
 ### Parallel Explorer batches
 
-[`PARALLEL.md`](references/PARALLEL.md) is authoritative for admission, dispatch, collection, resume, and convergence. Use only two or three independent read-only Explorer units under one parent objective; a disabled or rejected batch falls back to sequential exploration. Give each unit a standalone prompt, validate each latest complete result independently, and do not share sibling raw outputs. When Harvest is available, claim each accepted result before reusing its pane. Preserve failures as explicit gaps and synthesize once in the orchestrator, retaining contradictions rather than voting.
+[`PARALLEL.md`](references/PARALLEL.md) is authoritative for admission, dispatch, collection, resume, and convergence. Use only two or three independent read-only Explorer units under one parent objective; a disabled or rejected batch falls back to sequential exploration. Give each unit a standalone prompt, validate each latest complete result independently, and do not share sibling raw outputs. Preserve failures as explicit gaps and synthesize once in the orchestrator, retaining contradictions rather than voting.
 
 Run the optional Explorer Gate at most once after synthesis (see [`EXPLORER_GATE.md`](references/EXPLORER_GATE.md)). Parallel investigation does not permit parallel Fixers, shared-tree writes, or skipping sequential implementation, diff review, verification, or the Completion Gate.
 
@@ -455,8 +449,6 @@ Keep an agent's session for the whole unit: remaining questions, missing evidenc
 
 A new unit is the normal context-reset boundary for substantial work. Restart so the new unit begins with the standalone handoff constructed from settled state, unless the next work is genuinely still the same unit.
 
-The accepted result of the current unit must already have been claimed according to [`HARVEST.md`](references/HARVEST.md) before that agent is stopped or reused.
-
 Restart for a materially different problem, another independently reviewable slice of a larger plan, an abandoned strategy, or work that prior context would bias. Do not use a harness-native new-session command when it could fall back to that harness's default model or effort instead of preserving the role's settled configuration.
 
 Restart the same role with its settled harness, model, and effort. Before the first prompt of the new unit, verify with `herdr agent get <name>` that the agent is in the current tab and its harness, model, and effort match the settled role configuration. Use [`STARTUP.md`](references/STARTUP.md) §Resolution for the stop, wait-for-shell, restart, and verification procedure.
@@ -602,7 +594,6 @@ The Explorer Gate precedes implementation.
 
 On normal completion:
 
-- complete the Harvest objective lifecycle in [`HARVEST.md`](references/HARVEST.md), clearing the recorded active orchestration once you have confirmed the objective's completion criteria — before the final user-facing report where practical — and also when the user explicitly abandons the objective;
 - leave the persisted role configuration intact for the lifetime of the current orchestrator native session;
 - leave correctly configured delegated agents running for reuse;
 - leave panes intact, including user-owned panes.

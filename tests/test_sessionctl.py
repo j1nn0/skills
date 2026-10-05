@@ -1,6 +1,5 @@
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -15,8 +14,6 @@ IDENTITY = {
     "kind": "path",
     "value": "/tmp/sessionctl-test/session.jsonl",
 }
-ACTIVE_ID = "123e4567-e89b-42d3-a456-426614174000"
-INTERRUPTED_ID = "123e4567-e89b-42d3-a456-426614174001"
 SECRET = "sessionctl-test-secret-value"
 
 
@@ -24,15 +21,18 @@ def role(harness="codex", model="gpt-test", effort="high"):
     return {"harness": harness, "model": model, "effort": effort}
 
 
-def state(identity=None, explorer=None, fixer=None, active=None, version=2):
-    document = {
+def state(identity=None, explorer=None, fixer=None, version=2):
+    return {
         "schema_version": version,
         "orchestrator_session": dict(identity or IDENTITY),
         "explorer": dict(explorer or role()),
         "fixer": dict(fixer or role("claude", "sonnet-test", "medium")),
     }
-    if version == 2:
-        document["active_orchestration"] = active
+
+
+def legacy_state(active):
+    document = state()
+    document["active_orchestration"] = active
     return document
 
 
@@ -115,8 +115,6 @@ class SessionctlTest(unittest.TestCase):
                 "orchestrator_session",
                 "explorer",
                 "fixer",
-                "active_orchestration",
-                "active_orchestration_status",
                 "changed",
             },
             set(result),
@@ -194,7 +192,7 @@ class SessionctlTest(unittest.TestCase):
         self.assertFalse(result["changed"])
         self.assertFalse((self.xdg / "agent-orchestration").exists())
 
-    def test_inspect_matching_v2_reports_configuration_and_active_null(self):
+    def test_inspect_matching_v2_reports_configuration(self):
         self.write_state(state())
         result = self.inspect()
         self.assertTrue(result["state_available"])
@@ -203,8 +201,6 @@ class SessionctlTest(unittest.TestCase):
         self.assertTrue(result["configuration_complete"])
         self.assertEqual(role(), result["explorer"])
         self.assertEqual(role("claude", "sonnet-test", "medium"), result["fixer"])
-        self.assertIsNone(result["active_orchestration"])
-        self.assertEqual("valid", result["active_orchestration_status"])
 
     def test_inspect_matching_v1_is_valid_and_does_not_upgrade(self):
         path = self.write_state(state(version=1))
@@ -214,9 +210,41 @@ class SessionctlTest(unittest.TestCase):
         self.assertEqual(1, result["schema_version"])
         self.assertTrue(result["identity_matched"])
         self.assertTrue(result["configuration_complete"])
-        self.assertIsNone(result["active_orchestration"])
-        self.assertEqual("absent", result["active_orchestration_status"])
         self.assertEqual(original, path.read_bytes())
+
+    def test_inspect_missing_schema_version_defaults_to_v1(self):
+        document = legacy_state(None)
+        document.pop("schema_version")
+        path = self.write_state(document)
+        original = path.read_bytes()
+        result = self.inspect()
+        self.assertTrue(result["ok"])
+        self.assertEqual(1, result["schema_version"])
+        self.assertTrue(result["configuration_complete"])
+        self.assertEqual(original, path.read_bytes())
+
+    def test_inspect_ignores_legacy_extra_field_values(self):
+        legacy_values = (
+            None,
+            {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "label": "legacy objective",
+                "status": "active",
+                "created_at": "2026-06-01T12:00:00Z",
+            },
+            {"status": "malformed"},
+        )
+        for legacy_value in legacy_values:
+            with self.subTest(legacy_value=legacy_value):
+                path = self.write_state(legacy_state(legacy_value))
+                original = path.read_bytes()
+                result = self.inspect()
+                self.assertTrue(result["ok"])
+                self.assertTrue(result["identity_matched"])
+                self.assertTrue(result["configuration_complete"])
+                self.assertEqual(role(), result["explorer"])
+                self.assertEqual(role("claude", "sonnet-test", "medium"), result["fixer"])
+                self.assertEqual(original, path.read_bytes())
 
     def test_inspect_mismatched_identity_does_not_accept_configuration(self):
         other = dict(IDENTITY, value="/different/session.jsonl")
@@ -228,51 +256,15 @@ class SessionctlTest(unittest.TestCase):
         self.assertEqual(IDENTITY, result["orchestrator_session"])
         self.assertEqual(role(), result["explorer"])
 
-    def test_mutations_refuse_mismatched_identity_without_writing(self):
+    def test_set_role_refuses_mismatched_identity_without_writing(self):
         other = dict(IDENTITY, value="/different/session.jsonl")
-        foreign_explorer = role("foreign-explorer", "foreign-model", "low")
-        foreign_fixer = role("foreign-fixer", "other-model", "medium")
-
-        def active(status):
-            return {
-                "id": ACTIVE_ID,
-                "label": "foreign orchestration",
-                "status": status,
-                "created_at": "2026-06-01T12:00:00Z",
-            }
-
         cases = [
             (
                 "set-role",
                 ("set-role", "--role", "fixer", "--harness", "updated", "--model", "new-model", "--effort", "medium"),
-                state(identity=other, explorer=foreign_explorer, fixer=foreign_fixer),
+                state(identity=other),
                 None,
             ),
-            (
-                "orchestration.set",
-                ("orchestration", "set", "--id", ACTIVE_ID, "--label", "task"),
-                state(identity=other, explorer=foreign_explorer, fixer=foreign_fixer),
-                None,
-            ),
-            (
-                "orchestration.clear",
-                ("orchestration", "clear"),
-                state(identity=other, explorer=foreign_explorer, fixer=foreign_fixer),
-                None,
-            ),
-            (
-                "orchestration.interrupt",
-                ("orchestration", "interrupt"),
-                state(identity=other, explorer=foreign_explorer, fixer=foreign_fixer, active=active("active")),
-                None,
-            ),
-            (
-                "orchestration.resume",
-                ("orchestration", "resume"),
-                state(identity=other, explorer=foreign_explorer, fixer=foreign_fixer, active=active("interrupted")),
-                None,
-            ),
-            ("set validation", ("orchestration", "set", "--id", "bad", "--label", ""), state(identity=other), None),
         ]
         self.assert_mutations_refused_without_writing(cases, "identity_mismatch")
 
@@ -311,7 +303,7 @@ class SessionctlTest(unittest.TestCase):
         self.assertIsNone(result["explorer"])
         self.assertEqual("{not-json\n", path.read_text(encoding="utf-8"))
 
-    def test_mutations_refuse_unreadable_state_without_writing(self):
+    def test_set_role_refuses_unreadable_state_without_writing(self):
         raw = "{not-json\n"
         cases = [
             (
@@ -320,48 +312,9 @@ class SessionctlTest(unittest.TestCase):
                 {},
                 raw,
             ),
-            ("orchestration.set", ("orchestration", "set", "--id", ACTIVE_ID, "--label", "task"), {}, raw),
-            ("orchestration.clear", ("orchestration", "clear"), {}, raw),
-            ("orchestration.interrupt", ("orchestration", "interrupt"), {}, raw),
-            ("orchestration.resume", ("orchestration", "resume"), {}, raw),
         ]
         self.assert_mutations_refused_without_writing(cases, "unreadable_state")
 
-    def test_inspect_malformed_active_is_reported_without_repair(self):
-        document = state()
-        document["active_orchestration"] = {
-            "id": ACTIVE_ID,
-            "label": "bad status",
-            "status": "paused",
-            "created_at": "2026-06-01T12:00:00Z",
-        }
-        path = self.write_state(document)
-        original = path.read_bytes()
-        result = self.inspect()
-        self.assertTrue(result["ok"])
-        self.assertTrue(result["configuration_complete"])
-        self.assertEqual("malformed", result["active_orchestration_status"])
-        self.assertIsNone(result["active_orchestration"])
-        self.assertEqual(original, path.read_bytes())
-
-    def test_inspect_valid_active_and_interrupted_records(self):
-        active = {
-            "id": ACTIVE_ID,
-            "label": "bounded work",
-            "status": "active",
-            "created_at": "2026-06-01T12:00:00.123Z",
-        }
-        self.write_state(state(active=active))
-        result = self.inspect()
-        self.assertEqual("valid", result["active_orchestration_status"])
-        self.assertEqual(active, result["active_orchestration"])
-
-        interrupted = dict(active, id=INTERRUPTED_ID, status="interrupted")
-        interrupted["created_at"] = "2026-06-01T14:00:00+02:00"
-        self.write_state(state(active=interrupted))
-        result = self.inspect()
-        self.assertEqual("interrupted", result["active_orchestration"]["status"])
-        self.assertEqual(interrupted, result["active_orchestration"])
 
     def test_session_key_is_deterministic_distinct_and_matches_posix_cksum(self):
         first = self.inspect()["state_file"]
@@ -390,9 +343,12 @@ class SessionctlTest(unittest.TestCase):
         self.assertTrue(explorer_result["changed"])
         written = self.read_written_state(explorer_result)
         self.assertEqual(2, written["schema_version"])
+        self.assertEqual(
+            {"schema_version", "orchestrator_session", "explorer", "fixer"},
+            set(written),
+        )
         self.assertEqual(role("codex", "test-model", "high"), written["explorer"])
         self.assertEqual({field: "" for field in ROLE_FIELDS}, written["fixer"])
-        self.assertIsNone(written["active_orchestration"])
 
         fixer_result = self.parse_result(
             self.set_role("fixer", " claude ", " sonnet ", " medium "), ok=True
@@ -418,10 +374,12 @@ class SessionctlTest(unittest.TestCase):
         result = self.parse_result(self.set_role("explorer", "new", "model", "low"), ok=True)
         written = self.read_written_state(result)
         self.assertEqual(2, written["schema_version"])
-        self.assertEqual({"schema_version", "orchestrator_session", "explorer", "fixer", "active_orchestration"}, set(written))
+        self.assertEqual(
+            {"schema_version", "orchestrator_session", "explorer", "fixer"},
+            set(written),
+        )
         self.assertEqual(role("new", "model", "low"), written["explorer"])
         self.assertEqual(original["fixer"], written["fixer"])
-        self.assertIsNone(written["active_orchestration"])
 
     def test_empty_role_value_refuses_without_creating_state_directory(self):
         result = self.parse_result(self.set_role("explorer", "codex", "   ", "high"), ok=False)
@@ -436,104 +394,27 @@ class SessionctlTest(unittest.TestCase):
         self.assertIsNone(result["state_file"])
         self.assertFalse((self.xdg / "agent-orchestration").exists())
 
-    def test_orchestration_set_interrupt_resume_clear_and_idempotence(self):
-        set_result = self.parse_result(
-            self.run_sessionctl(
-                "orchestration", "set", "--id", ACTIVE_ID, "--label", "  rollout review  "
-            ),
-            ok=True,
+    def test_set_role_drops_legacy_field_and_preserves_other_role(self):
+        original = legacy_state(
+            {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "label": "legacy objective",
+                "status": "active",
+                "created_at": "2026-06-01T12:00:00Z",
+            }
         )
-        record = set_result["active_orchestration"]
-        self.assertEqual(ACTIVE_ID, record["id"])
-        self.assertEqual("  rollout review  ", record["label"])
-        self.assertEqual("active", record["status"])
-        self.assertTrue(re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", record["created_at"]))
-        self.assertEqual({"id", "label", "status", "created_at"}, set(record))
-
-        interrupted = self.parse_result(
-            self.run_sessionctl("orchestration", "interrupt"), ok=True
+        self.write_state(original)
+        result = self.parse_result(
+            self.set_role("explorer", "updated", "new-model", "low"), ok=True
         )
-        interrupted_record = interrupted["active_orchestration"]
-        self.assertEqual("interrupted", interrupted_record["status"])
-        for field in ("id", "label", "created_at"):
-            self.assertEqual(record[field], interrupted_record[field])
-        state_path = Path(interrupted["state_file"])
-        unchanged = state_path.read_bytes()
-        again = self.parse_result(
-            self.run_sessionctl("orchestration", "interrupt"), ok=True
-        )
-        self.assertFalse(again["changed"])
-        self.assertEqual(unchanged, state_path.read_bytes())
-
-        resumed = self.parse_result(self.run_sessionctl("orchestration", "resume"), ok=True)
-        self.assertEqual("active", resumed["active_orchestration"]["status"])
-        for field in ("id", "label", "created_at"):
-            self.assertEqual(record[field], resumed["active_orchestration"][field])
-        active_bytes = state_path.read_bytes()
-        resume_again = self.parse_result(self.run_sessionctl("orchestration", "resume"), ok=True)
-        self.assertFalse(resume_again["changed"])
-        self.assertEqual(active_bytes, state_path.read_bytes())
-        cleared = self.parse_result(self.run_sessionctl("orchestration", "clear"), ok=True)
-        self.assertTrue(cleared["changed"])
-        self.assertIsNone(cleared["active_orchestration"])
-        cleared_bytes = state_path.read_bytes()
-        clear_again = self.parse_result(self.run_sessionctl("orchestration", "clear"), ok=True)
-        self.assertFalse(clear_again["changed"])
-        self.assertEqual(cleared_bytes, state_path.read_bytes())
-
-    def test_orchestration_clear_on_missing_state_is_idempotent(self):
-        result = self.parse_result(self.run_sessionctl("orchestration", "clear"), ok=True)
-        self.assertFalse(result["changed"])
-        self.assertFalse(result["state_available"])
-        self.assertFalse((self.xdg / "agent-orchestration").exists())
-
-    def test_malformed_active_is_repaired_in_one_write_while_preserving_roles(self):
-        document = state()
-        document["active_orchestration"] = {"status": "not-valid"}
-        self.write_state(document)
-        result = self.parse_result(self.set_role("explorer", "updated", "new-model", "low"), ok=True)
         written = self.read_written_state(result)
+        self.assertEqual(2, written["schema_version"])
+        self.assertEqual(
+            {"schema_version", "orchestrator_session", "explorer", "fixer"},
+            set(written),
+        )
         self.assertEqual(role("updated", "new-model", "low"), written["explorer"])
-        self.assertEqual(document["fixer"], written["fixer"])
-        self.assertIsNone(written["active_orchestration"])
-        self.assertEqual("valid", result["active_orchestration_status"])
-
-    def test_interrupt_resume_refuse_null_or_malformed_without_writing(self):
-        path = self.write_state(state())
-        before = path.read_bytes()
-        for verb, reason in (
-            ("interrupt", "no_active_orchestration"),
-            ("resume", "no_active_orchestration"),
-        ):
-            with self.subTest(verb=verb):
-                result = self.parse_result(
-                    self.run_sessionctl("orchestration", verb), ok=False
-                )
-                self.assertEqual(reason, result["reason"])
-                self.assertEqual(before, path.read_bytes())
-
-        malformed = state()
-        malformed["active_orchestration"] = {"label": "bad"}
-        self.write_state(malformed)
-        before = path.read_bytes()
-        result = self.parse_result(self.run_sessionctl("orchestration", "resume"), ok=False)
-        self.assertEqual("malformed_active_orchestration", result["reason"])
-        self.assertEqual(before, path.read_bytes())
-
-    def test_invalid_orchestration_id_and_label_refuse_without_writes(self):
-        path = self.state_path()
-        for args, reason in (
-            (("--id", "ABC-e4567-e89b-42d3-a456-426614174000", "--label", "task"), "invalid_id"),
-            (("--id", ACTIVE_ID, "--label", " \n "), "invalid_label"),
-            (("--id", ACTIVE_ID, "--label", "x" * 257), "invalid_label"),
-        ):
-            with self.subTest(reason=reason, args=args):
-                result = self.parse_result(
-                    self.run_sessionctl("orchestration", "set", *args), ok=False
-                )
-                self.assertEqual(reason, result["reason"])
-                self.assertFalse(path.exists())
-                self.assertFalse((self.xdg / "agent-orchestration").exists())
+        self.assertEqual(original["fixer"], written["fixer"])
 
     def test_atomic_replace_permissions_and_no_partial_write_on_refusal(self):
         directory = self.xdg / "agent-orchestration"
@@ -554,10 +435,9 @@ class SessionctlTest(unittest.TestCase):
         unchanged = path.read_bytes()
 
         refused = self.parse_result(
-            self.run_sessionctl("orchestration", "set", "--id", "bad", "--label", "task"),
-            ok=False,
+            self.set_role("explorer", "", "model", "low"), ok=False
         )
-        self.assertEqual("invalid_id", refused["reason"])
+        self.assertEqual("invalid_role_value", refused["reason"])
         self.assertEqual(unchanged, path.read_bytes())
         self.assertEqual(second_stat.st_ino, path.stat().st_ino)
         self.assertEqual([], list(directory.glob(".sessionctl-*.tmp")))
@@ -604,7 +484,7 @@ class SessionctlTest(unittest.TestCase):
                 )
 
     def test_argv_errors_exit_two_with_usage_and_no_json(self):
-        for args in ((), ("inspect", "extra"), ("set-role", "--role", "other"), ("orchestration", "set", "--id", ACTIVE_ID)):
+        for args in ((), ("inspect", "extra"), ("set-role", "--role", "other"), ("orchestration", "get")):
             with self.subTest(args=args):
                 completed = self.run_sessionctl(*args)
                 self.assertEqual(2, completed.returncode)

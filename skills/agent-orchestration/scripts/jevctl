@@ -65,8 +65,6 @@ EXPLORER_FORBIDDEN_KEYS = {
     "effort",
     "prompt",
     "prompts",
-    "harvest_id",
-    "orchestration_id",
 }
 TRUNCATION_MARKER = "[state truncated]"
 EXIT_CODE_REASONS = {

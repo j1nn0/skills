@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""Read and update deterministic per-session orchestration state."""
+"""Read and update deterministic per-session agent role configuration."""
 
-import datetime
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -13,22 +11,10 @@ from pathlib import Path
 
 USAGE = """usage:
   sessionctl inspect
-  sessionctl set-role --role {explorer|fixer} --harness H --model M --effort E
-  sessionctl orchestration get
-  sessionctl orchestration set --id UUID --label LABEL
-  sessionctl orchestration interrupt
-  sessionctl orchestration resume
-  sessionctl orchestration clear"""
+  sessionctl set-role --role {explorer|fixer} --harness H --model M --effort E"""
 
 ROLES = ("explorer", "fixer")
 ROLE_FIELDS = ("harness", "model", "effort")
-ACTIVE_FIELDS = ("id", "label", "status", "created_at")
-UUID4_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-)
-ISO8601_RE = re.compile(
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$"
-)
 CKSUM_POLY = 0x04C11DB7
 
 
@@ -77,15 +63,6 @@ def parse_args(argv):
             "model": values["--model"],
             "effort": values["--effort"],
         }
-    if len(args) >= 2 and args[:2] == ["orchestration", "get"] and len(args) == 2:
-        return "orchestration.get", {}
-    if len(args) >= 2 and args[:2] == ["orchestration", "set"]:
-        values = parse_options(args[2:], {"--id", "--label"})
-        if values is None:
-            return None
-        return "orchestration.set", {"id": values["--id"], "label": values["--label"]}
-    if len(args) == 2 and args[0] == "orchestration" and args[1] in {"interrupt", "resume", "clear"}:
-        return "orchestration." + args[1], {}
     return None
 
 
@@ -175,39 +152,6 @@ def normalize_role(value):
     }
 
 
-def valid_uuid4(value):
-    return isinstance(value, str) and UUID4_RE.fullmatch(value) is not None
-
-
-def valid_label(value):
-    if not isinstance(value, str) or not value.strip() or len(value) > 256:
-        return False
-    return not any(char in value for char in "\r\n\u0085\u2028\u2029")
-
-
-def valid_created_at(value):
-    if not isinstance(value, str) or ISO8601_RE.fullmatch(value) is None:
-        return False
-    try:
-        parsed = datetime.datetime.fromisoformat(value[:-1] + "+00:00" if value.endswith("Z") else value)
-    except ValueError:
-        return False
-    return parsed.tzinfo is not None and parsed.utcoffset() is not None
-
-
-def normalize_active(value):
-    if not isinstance(value, dict) or set(value) != set(ACTIVE_FIELDS):
-        return None
-    if (
-        not valid_uuid4(value.get("id"))
-        or not valid_label(value.get("label"))
-        or value.get("status") not in ("active", "interrupted")
-        or not valid_created_at(value.get("created_at"))
-    ):
-        return None
-    return {field: value[field] for field in ACTIVE_FIELDS}
-
-
 def empty_read(state_available=False, readable=True, schema_version=None, reason=None):
     return {
         "state_available": state_available,
@@ -216,8 +160,6 @@ def empty_read(state_available=False, readable=True, schema_version=None, reason
         "identity_matched": False,
         "explorer": None,
         "fixer": None,
-        "active_orchestration": None,
-        "active_orchestration_status": "absent",
         "reason": reason,
     }
 
@@ -236,10 +178,7 @@ def read_state(path, identity):
     if not isinstance(document, dict):
         return empty_read(state_available=True, readable=False, reason="unreadable_state")
 
-    if "schema_version" in document:
-        version = document["schema_version"]
-    else:
-        version = 2 if "active_orchestration" in document else 1
+    version = document.get("schema_version", 1)
     if type(version) is not int or version not in (1, 2):
         return empty_read(state_available=True, readable=False, reason="unreadable_state")
 
@@ -251,17 +190,6 @@ def read_state(path, identity):
     )
     explorer = normalize_role(document.get("explorer"))
     fixer = normalize_role(document.get("fixer"))
-    if "active_orchestration" not in document:
-        active = None
-        active_status = "absent"
-    else:
-        raw_active = document["active_orchestration"]
-        if raw_active is None:
-            active = None
-            active_status = "valid"
-        else:
-            active = normalize_active(raw_active)
-            active_status = "valid" if active is not None else "malformed"
 
     return {
         "state_available": True,
@@ -270,8 +198,6 @@ def read_state(path, identity):
         "identity_matched": identity_matched,
         "explorer": explorer,
         "fixer": fixer,
-        "active_orchestration": active,
-        "active_orchestration_status": active_status,
         "reason": None,
     }
 
@@ -302,8 +228,6 @@ def envelope(action, identity, path, state, ok=True, reason=None, changed=False)
         orchestrator_session = None
         explorer = None
         fixer = None
-        active = None
-        active_status = "absent"
         complete = False
     else:
         state_file = str(path)
@@ -313,8 +237,6 @@ def envelope(action, identity, path, state, ok=True, reason=None, changed=False)
         orchestrator_session = identity
         explorer = state["explorer"]
         fixer = state["fixer"]
-        active = state["active_orchestration"]
-        active_status = state["active_orchestration_status"]
         complete = configuration_complete(state)
     return {
         "ok": ok,
@@ -329,8 +251,6 @@ def envelope(action, identity, path, state, ok=True, reason=None, changed=False)
         "orchestrator_session": orchestrator_session,
         "explorer": explorer,
         "fixer": fixer,
-        "active_orchestration": active,
-        "active_orchestration_status": active_status,
         "changed": changed,
     }
 
@@ -347,11 +267,9 @@ def default_mutable_state(identity, read):
     if read["state_available"] and read["readable"]:
         explorer = read["explorer"] or empty_role()
         fixer = read["fixer"] or empty_role()
-        active = read["active_orchestration"]
     else:
         explorer = empty_role()
         fixer = empty_role()
-        active = None
     return {
         "schema_version": 2,
         "orchestrator_session": {
@@ -361,7 +279,6 @@ def default_mutable_state(identity, read):
         },
         "explorer": dict(explorer),
         "fixer": dict(fixer),
-        "active_orchestration": active,
     }
 
 
@@ -373,8 +290,6 @@ def mutable_view(document):
         "identity_matched": True,
         "explorer": document["explorer"],
         "fixer": document["fixer"],
-        "active_orchestration": document["active_orchestration"],
-        "active_orchestration_status": "valid",
         "reason": None,
     }
 
@@ -399,10 +314,6 @@ def write_state(path, document):
             pass
 
 
-def created_at_now():
-    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 def fail(action, identity, path, state, reason):
     return report(action, identity, path, state, ok=False, reason=reason)
 
@@ -415,7 +326,7 @@ def run_action(action, values):
     path = session_file(identity)
     state = read_state(path, identity)
 
-    if action in {"inspect", "orchestration.get"}:
+    if action == "inspect":
         reason = refusal_reason(state)
         return report(action, identity, path, state, ok=reason is None, reason=reason)
 
@@ -430,63 +341,6 @@ def run_action(action, values):
         document[values["role"]] = {
             field: values[field].strip() for field in ROLE_FIELDS
         }
-        try:
-            write_state(path, document)
-        except (OSError, UnicodeError, ValueError):
-            return fail(action, identity, path, state, "write_failed")
-        return report(action, identity, path, mutable_view(document), changed=True)
-
-    if action == "orchestration.set":
-        if not valid_uuid4(values["id"]):
-            return fail(action, identity, path, state, "invalid_id")
-        if not valid_label(values["label"]):
-            return fail(action, identity, path, state, "invalid_label")
-        document = default_mutable_state(identity, state)
-        document["active_orchestration"] = {
-            "id": values["id"],
-            "label": values["label"],
-            "status": "active",
-            "created_at": created_at_now(),
-        }
-        try:
-            write_state(path, document)
-        except (OSError, UnicodeError, ValueError):
-            return fail(action, identity, path, state, "write_failed")
-        return report(action, identity, path, mutable_view(document), changed=True)
-
-    if action == "orchestration.clear":
-        if (
-            state["readable"]
-            and (not state["state_available"] or (
-                state["identity_matched"]
-                and state["schema_version"] == 2
-                and state["active_orchestration_status"] == "valid"
-                and state["active_orchestration"] is None
-            ))
-        ):
-            return report(action, identity, path, state, changed=False)
-        document = default_mutable_state(identity, state)
-        document["active_orchestration"] = None
-        try:
-            write_state(path, document)
-        except (OSError, UnicodeError, ValueError):
-            return fail(action, identity, path, state, "write_failed")
-        return report(action, identity, path, mutable_view(document), changed=True)
-
-    if action in {"orchestration.interrupt", "orchestration.resume"}:
-        active = state["active_orchestration"]
-        if state["active_orchestration_status"] == "malformed":
-            return fail(action, identity, path, state, "malformed_active_orchestration")
-        if active is None:
-            return fail(action, identity, path, state, "no_active_orchestration")
-        expected = "active" if action.endswith("interrupt") else "interrupted"
-        desired = "interrupted" if action.endswith("interrupt") else "active"
-        if active["status"] == desired:
-            return report(action, identity, path, state, changed=False)
-        if active["status"] != expected:
-            return fail(action, identity, path, state, "invalid_active_status")
-        document = default_mutable_state(identity, state)
-        document["active_orchestration"]["status"] = desired
         try:
             write_state(path, document)
         except (OSError, UnicodeError, ValueError):

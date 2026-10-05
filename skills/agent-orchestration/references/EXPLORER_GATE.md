@@ -43,7 +43,7 @@ Send one JSON object on stdin. Required fields are:
 
 Optional fields are `files_examined`, `tests_examined`, and `external_sources` (lists of non-empty strings), plus `explorer_confidence` (`{"level":"high|medium|low","reason":"..."}`). The confidence reason must be non-empty. Only these allowed fields are serialized as the compact state; unrelated caller fields are dropped.
 
-The following top-level keys are forbidden and make the request `invalid_request`: `transcript`, `raw_transcript`, `agent_transcript`, `source_files`, `full_source`, `repository_dump`, `orchestrator_decision`, `intended_action`, `tentative_action`, `retry_count`, `retry_counter`, `loop_count`, `loop_counter`, `round_count`, `attempt_count`, `harness`, `model`, `effort`, `prompt`, `prompts`, `harvest_id`, and `orchestration_id`.
+The following top-level keys are forbidden and make the request `invalid_request`: `transcript`, `raw_transcript`, `agent_transcript`, `source_files`, `full_source`, `repository_dump`, `orchestrator_decision`, `intended_action`, `tentative_action`, `retry_count`, `retry_counter`, `loop_count`, `loop_counter`, `round_count`, `attempt_count`, `harness`, `model`, `effort`, `prompt`, and `prompts`.
 
 Send settled facts, not the conversation that produced them. Do not include secrets, credentials, raw agent transcripts, full source files, repository dumps, orchestration metadata, or instructions that steer the model toward a preferred answer. Jev does not inspect the workspace; the orchestrator remains responsible for source attribution and factual accuracy.
 
