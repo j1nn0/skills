@@ -483,7 +483,10 @@ class RunBehaviorEvalTest(unittest.TestCase):
         self.assertIn("completed answer or synthesis", response_prompt)
         self.assertNotIn("decision-only", response_prompt)
         self.assertNotIn("execute the task", response_prompt)
-        self.assertIn("Do not start agents, run commands, modify files", response_prompt)
+        self.assertNotIn("run commands,", response_prompt)
+        self.assertIn("You may run read-only shell commands", response_prompt)
+        self.assertIn("Do not start agents, create, modify, or delete files", response_prompt)
+        self.assertIn("install packages, or change any other local or external state", response_prompt)
         self.assertNotIn("private response expectation", response_prompt)
 
     def test_validate_response_rejects_extra_keys_and_empty_text(self):
@@ -595,6 +598,53 @@ class RunBehaviorEvalTest(unittest.TestCase):
         self.assertTrue(result["pass"])
         self.assertEqual(["cat skills/agent-orchestration/references/parallel.md"], result["commands"])
         self.assertEqual({"references/parallel.md": True}, result["references_read"])
+        self.assertTrue(result["reference_treatment_applied"])
+        self.assertEqual(["references/parallel.md"], result["skill_references_opened"])
+
+    def test_reference_treatment_status_is_diagnostic_and_does_not_change_grading(self):
+        suite = synthetic_suite()
+        skill_path = Path(__file__).parents[1] / "skills" / "agent-orchestration"
+
+        def run(case, commands):
+            def fake_codex(prompt, schema, model, effort, cwd, timeout, trace=None):
+                if "response" in schema["properties"]:
+                    trace.extend(commands)
+                    return {"response": "Synthesis."}
+                return {"required": [{"id": "required-1", "satisfied": True, "evidence": "q"}], "forbidden": []}
+
+            return run_behavior_eval.run_case_once(
+                case, suite["invariants"], skill_path, suite["context"], "m", "low", "g", "low", 15,
+                codex_runner=fake_codex,
+            )
+
+        treated = response_case_fixture()
+        treated["required_references"] = ["references/parallel.md"]
+        unread = run(treated, ["ls skills"])
+        read = run(treated, ["sed -n 1,80p skills/agent-orchestration/references/parallel.md"])
+        control = run(response_case_fixture(), ["cat skills/agent-orchestration/references/parallel.md"])
+        untouched = run(response_case_fixture(), [])
+
+        self.assertFalse(unread["reference_treatment_applied"])
+        self.assertEqual({"references/parallel.md": False}, unread["references_read"])
+        self.assertTrue(unread["pass"])
+        self.assertEqual(read["expectations"], unread["expectations"])
+        self.assertTrue(read["reference_treatment_applied"])
+        self.assertIsNone(control["reference_treatment_applied"])
+        self.assertEqual({}, control["references_read"])
+        self.assertEqual(["references/parallel.md"], control["skill_references_opened"])
+        self.assertEqual([], untouched["skill_references_opened"])
+
+    def test_decision_prompt_keeps_its_original_contract(self):
+        case = synthetic_suite()["cases"][0]
+        prompt = run_behavior_eval.build_model_prompt("Context.", "Skill text.", "demo", case)
+
+        self.assertTrue(prompt.endswith(
+            "This is a decision-only evaluation. Decide the next step; do not start agents, execute the task, or "
+            "change state. For each delegated agent, `handoffs` must contain the full standalone prompt that would "
+            "be sent to that agent. Use an empty `user_message` string when no user-facing message is needed. "
+            "Return only a JSON decision matching the provided schema."
+        ))
+        self.assertNotIn("read-only shell commands", prompt)
 
     def test_codex_environment_preserves_configured_codex_home(self):
         base_environment = {

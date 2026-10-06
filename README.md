@@ -54,7 +54,7 @@ Codex で評価する場合は、`evals/trigger/run_codex_eval.py` を使う。`
 
 ### behavior の評価
 
-`evals/behavior/` では、スキルの指示に沿った次の行動や委譲内容を、決定的な検査と rubric による採点で評価する。既定の suite は `evals/behavior/agent-orchestration.json`。結果は `evals/behavior/results/` に保存され、Git では追跡しない。ケースの `evaluation_mode` は既定の `decision` なら次の行動の判断を、`response` なら外部の状態を変えずに書いた実際の回答を採点する。`required_references` に skill 内の参照ファイルを挙げると、回答の前にそのファイルを読むよう指示する。`--dry-run` を付けるとモデルを呼び出さず、prompt を確認できる。
+`evals/behavior/` では、スキルの指示に沿った次の行動や委譲内容を、決定的な検査と rubric による採点で評価する。既定の suite は `evals/behavior/agent-orchestration.json`。結果は `evals/behavior/results/` に保存され、Git では追跡しない。ケースの `evaluation_mode` は既定の `decision` なら次の行動の判断を、`response` なら、読み取り専用のコマンドでの確認だけを許し、状態を変えずに書いた実際の回答を採点する。`required_references` に skill 内の参照ファイルを挙げると、回答の前にそのファイルを読むよう指示する。`--dry-run` を付けるとモデルを呼び出さず、prompt を確認できる。
 
 ```sh
 python3 evals/behavior/run_behavior_eval.py

@@ -305,9 +305,12 @@ def build_response_prompt(context, skill_text, skill_directory_name, case):
         context, skill_text, skill_directory_name, case, "produce this response"
     ) + (
         "This is a response evaluation. Produce the actual non-mutating answer or synthesis that the skill "
-        "calls for at this point in the scenario. Do not start agents, run commands, modify files, or change "
-        "external state. Reasoning about the supplied evidence and writing the completed answer or synthesis "
-        "in `response` is expected. Return only a JSON object matching the provided schema."
+        "calls for at this point in the scenario. Do not start agents, create, modify, or delete files, run git "
+        "commands that change the repository, install packages, or change any other local or external state. "
+        "You may run read-only shell commands, such as cat, sed, head, tail, grep, rg, find, ls, or pwd, only to "
+        "inspect the skill instructions, its reference files, or other read-only context needed for the "
+        "response. Reasoning about the supplied evidence and writing the completed answer or synthesis in "
+        "`response` is expected. Return only a JSON object matching the provided schema."
     )
 
 
@@ -662,9 +665,31 @@ def _failed_run(run_number, error, decision=None, checks=None, case=None):
     }
 
 
-def _trace_fields(case, commands):
-    """Return diagnostic fields describing what the model under test executed."""
-    return {"commands": list(commands), "references_read": references_read(case, commands)}
+def skill_references_opened(skill_path, commands):
+    """Return the skill reference files named by any executed command, whether or not they were required."""
+    reference_directory = Path(skill_path) / "references"
+    if not reference_directory.is_dir():
+        return []
+    return sorted(
+        f"references/{path.name}"
+        for path in reference_directory.iterdir()
+        if path.is_file() and any(path.name in command for command in commands)
+    )
+
+
+def _trace_fields(case, commands, skill_path):
+    """Return diagnostic fields describing what the model under test executed.
+
+    These fields never affect grading. reference_treatment_applied is None when the case
+    requires no reference, and otherwise records whether every required reference was read.
+    """
+    required = references_read(case, commands)
+    return {
+        "commands": list(commands),
+        "skill_references_opened": skill_references_opened(skill_path, commands),
+        "references_read": required,
+        "reference_treatment_applied": all(required.values()) if required else None,
+    }
 
 
 def run_case_once(
@@ -708,7 +733,7 @@ def run_case_once(
             )
             decision = validate_response(payload) if response_mode else validate_decision(payload)
     except Exception as error:
-        return {**_failed_run(run_number, f"model call failed: {error}", case=case), **_trace_fields(case, commands)}
+        return {**_failed_run(run_number, f"model call failed: {error}", case=case), **_trace_fields(case, commands, skill_path)}
 
     checks = [] if response_mode else deterministic_checks(case, decision)
     rubric = decision_expectations(case)
@@ -747,7 +772,7 @@ def run_case_once(
                 checks=checks,
                 case=case,
             ),
-            **_trace_fields(case, commands),
+            **_trace_fields(case, commands, skill_path),
         }
 
     failed_items = [item for item in checks + graded_expectations if not item["passed"]]
@@ -761,7 +786,7 @@ def run_case_once(
         "pass": passed,
         "violated_invariants": violated_invariants,
         "error": None,
-        **_trace_fields(case, commands),
+        **_trace_fields(case, commands, skill_path),
     }
 
 
