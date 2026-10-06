@@ -66,7 +66,7 @@ policy merely to make progress.
 
 ## Convergence status mapping
 
-These outcomes map to Parallel Explorers convergence status ([`PARALLEL.md`](PARALLEL.md)):
+These outcomes map to Parallel Explorers convergence status ([`parallel.md`](parallel.md)):
 
 - `agent_blocked` (submission refused before input was sent) and a prompt that settles on `blocked`: the unit has not settled; while recovery is possible it is `incomplete` (recoverable), not `failed`.
 - `agent_prompt_stalled`, or no observable progress after a batch submission within the bounded liveness window: submission/start failure → `incomplete`; inspect and re-prompt the same unit before judging it.

@@ -57,9 +57,9 @@ All delegated agents must run in the orchestrator's current tab. Treat `$HERDR_T
 
 Role configuration is scoped to the current top-level orchestrator's native Herdr agent session, not to one invocation, request, task, or delegation.
 
-Before asking the user for configuration, resolve the current orchestrator session by running `skills/agent-orchestration/scripts/sessionctl inspect` and follow [`STARTUP.md`](references/STARTUP.md) to interpret the result. A complete matching persisted configuration is authoritative and is reused without asking again, even when the current context no longer contains the earlier configuration exchange. Ask only when STARTUP.md's session-state policy establishes that no complete configuration is available, then persist the settled values immediately.
+Before asking the user for configuration, resolve the current orchestrator session by running `skills/agent-orchestration/scripts/sessionctl inspect` and follow [`startup.md`](references/startup.md) to interpret the result. A complete matching persisted configuration is authoritative and is reused without asking again, even when the current context no longer contains the earlier configuration exchange. Ask only when startup.md's session-state policy establishes that no complete configuration is available, then persist the settled values immediately.
 
-Read [`STARTUP.md`](references/STARTUP.md) before the first delegation of every invocation, and whenever a role's agent is missing, lives in another tab, has the wrong harness, model, or effort, or needs a pane created. It holds the session-state procedure, agent resolution steps, per-role configuration and start commands, and pane layout.
+Read [`startup.md`](references/startup.md) before the first delegation of every invocation, and whenever a role's agent is missing, lives in another tab, has the wrong harness, model, or effort, or needs a pane created. It holds the session-state procedure, agent resolution steps, per-role configuration and start commands, and pane layout.
 
 ## Workflow
 
@@ -82,13 +82,13 @@ Read [`STARTUP.md`](references/STARTUP.md) before the first delegation of every 
 
 ## Concurrency
 
-Only read-only Explorer work admitted under [`PARALLEL.md`](references/PARALLEL.md) may run in parallel to reduce investigation latency across independent units on the same repository state; serialize all writes, Fixer work, and Explorer–Fixer overlap through the orchestrator, and when in doubt serialize work there.
+Only read-only Explorer work admitted under [`parallel.md`](references/parallel.md) may run in parallel to reduce investigation latency across independent units on the same repository state; serialize all writes, Fixer work, and Explorer–Fixer overlap through the orchestrator, and when in doubt serialize work there.
 
 ### Parallel Explorer batches
 
-[`PARALLEL.md`](references/PARALLEL.md) is authoritative for admission, dispatch, collection, resume, and convergence. Use only two or three independent read-only Explorer units under one parent objective; a disabled or rejected batch falls back to sequential exploration. Give each unit a standalone prompt, validate each latest complete result independently, and do not share sibling raw outputs. Preserve failures as explicit gaps and synthesize once in the orchestrator, retaining contradictions rather than voting.
+[`parallel.md`](references/parallel.md) is authoritative for admission, dispatch, collection, resume, and convergence. Use only two or three independent read-only Explorer units under one parent objective; a disabled or rejected batch falls back to sequential exploration. Give each unit a standalone prompt, validate each latest complete result independently, and do not share sibling raw outputs. Preserve failures as explicit gaps and synthesize once in the orchestrator, retaining contradictions rather than voting.
 
-Run the optional Explorer Gate at most once after synthesis (see [`EXPLORER_GATE.md`](references/EXPLORER_GATE.md)). Parallel investigation does not permit parallel Fixers, shared-tree writes, or skipping sequential implementation, diff review, verification, or the Completion Gate.
+Run the optional Explorer Gate at most once after synthesis (see [`explorer-gate.md`](references/explorer-gate.md)). Parallel investigation does not permit parallel Fixers, shared-tree writes, or skipping sequential implementation, diff review, verification, or the Completion Gate.
 
 ## Handoffs
 
@@ -449,7 +449,7 @@ A new unit is the normal context-reset boundary for substantial work. Restart so
 
 Restart for a materially different problem, another independently reviewable slice of a larger plan, an abandoned strategy, or work that prior context would bias. Do not use a harness-native new-session command when it could fall back to that harness's default model or effort instead of preserving the role's settled configuration.
 
-Restart the same role with its settled harness, model, and effort. Before the first prompt of the new unit, verify with `herdr agent get <name>` that the agent is in the current tab and its harness, model, and effort match the settled role configuration. Use [`STARTUP.md`](references/STARTUP.md) §Resolution for the stop, wait-for-shell, restart, and verification procedure.
+Restart the same role with its settled harness, model, and effort. Before the first prompt of the new unit, verify with `herdr agent get <name>` that the agent is in the current tab and its harness, model, and effort match the settled role configuration. Use [`startup.md`](references/startup.md) §Resolution for the stop, wait-for-shell, restart, and verification procedure.
 
 ### Reading results
 
@@ -494,7 +494,7 @@ prompt you just sent. Confirm the agent is idle with `herdr agent get` before
 prompting, rather than trying to detect staleness afterwards: once you hold a
 plausible-looking block, nothing in it tells you which prompt produced it.
 
-Read [`RECOVERY.md`](references/RECOVERY.md) when a prompt is rejected before it reaches the
+Read [`recovery.md`](references/recovery.md) when a prompt is rejected before it reaches the
 agent, times out, settles on `blocked`, or an agent appears stuck. It holds the
 submission failures, the inspection order, when interrupting is justified, and
 the routes out.
@@ -557,7 +557,7 @@ unnecessary access to secrets without explicit permission.
 
 ### Optional Jev completion gate
 
-[`JEV.md`](references/JEV.md) is authoritative for the optional gate. Run the Completion Gate only after the orchestrator reviews the actual diff and deterministic project verification passes; Jev cannot override deterministic failures, policy, or this skill's invariants. If Jev is disabled, unavailable, invalid, or uncertain, continue the existing workflow conservatively; disabled or unavailable Jev leaves behavior unchanged. Report unavailability concisely without failing the task.
+[`jev.md`](references/jev.md) is authoritative for the optional gate. Run the Completion Gate only after the orchestrator reviews the actual diff and deterministic project verification passes; Jev cannot override deterministic failures, policy, or this skill's invariants. If Jev is disabled, unavailable, invalid, or uncertain, continue the existing workflow conservatively; disabled or unavailable Jev leaves behavior unchanged. Report unavailability concisely without failing the task.
 
 #### Shadow mode
 
@@ -584,7 +584,7 @@ completion_match: ((both complete) or (both not complete))
 
 ### Optional Jev Explorer gate
 
-[`EXPLORER_GATE.md`](references/EXPLORER_GATE.md) is authoritative for the optional post-Explorer evidence gate. Run it only after the Explorer returns and you have reviewed and settled its evidence. Set `orchestrator_reviewed: true` only after that review. Disabled or incomplete-review gates do not start `cmd`.
+[`explorer-gate.md`](references/explorer-gate.md) is authoritative for the optional post-Explorer evidence gate. Run it only after the Explorer returns and you have reviewed and settled its evidence. Set `orchestrator_reviewed: true` only after that review. Disabled or incomplete-review gates do not start `cmd`.
 
 In `shadow`, record the result without changing the route. In `active`, only a decided, confident `explore_more` may hold the fixer handoff. `proceed_to_fix` is not authorization; neither mode auto-applies. For invalid, uncertain, or unavailable results, continue from your evidence review or escalate.
 

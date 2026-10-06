@@ -1,6 +1,6 @@
 # Optional Jev Gates
 
-The Completion Gate is an optional decision aid for `agent-orchestration`, disabled by default until the live path is smoke-tested. It assesses a settled implementation report after diff review and deterministic verification. The separate Explorer Gate assesses orchestrator-reviewed evidence after an Explorer result and before a fixer handoff; its policy is in [`EXPLORER_GATE.md`](EXPLORER_GATE.md). Neither gate replaces orchestrator judgment. Enabling or removing them adds no startup question and leaves Explorer/Fixer persistence unchanged.
+The Completion Gate is an optional decision aid for `agent-orchestration`, disabled by default until the live path is smoke-tested. It assesses a settled implementation report after diff review and deterministic verification. The separate Explorer Gate assesses orchestrator-reviewed evidence after an Explorer result and before a fixer handoff; its policy is in [`explorer-gate.md`](explorer-gate.md). Neither gate replaces orchestrator judgment. Enabling or removing them adds no startup question and leaves Explorer/Fixer persistence unchanged.
 
 ## Authority and scope
 
@@ -105,4 +105,4 @@ With `CMD_ZDR=1`, `cmd` preserves the session-wide ZDR opt-in. Jev has no ZDR-ca
 
 `scripts/jevctl doctor` is diagnostic only and always prints one JSON object including `enabled`, `mode`, and the additive `gates` summary. When enabled on the `cmd` transport it checks for `cmd` and runs the local `cmd --version` smoke probe; probe failures use the same exit-code mapping. It makes no model request and mutates no local state. Completion results include `mode` and `would_auto_apply`; Explorer results include `mode`, `evidence_sufficient`, and `would_block`. All commands keep JSON alone on stdout and send only sanitized diagnostics to stderr.
 
-The `provider` transport remains an unimplemented extension point. Explorer Gate policy is specified in [`EXPLORER_GATE.md`](EXPLORER_GATE.md); Parallel and Plan gates remain unspecified.
+The `provider` transport remains an unimplemented extension point. Explorer Gate policy is specified in [`explorer-gate.md`](explorer-gate.md); Parallel and Plan gates remain unspecified.

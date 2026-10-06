@@ -17,10 +17,10 @@ state directory and keyed by Herdr's native `agent_session` identity. Reinvoking
 `agent-orchestration`, sending another request, completing or starting a task, changing units, or
 compacting context reloads the same configuration instead of asking again. Only an explicit user
 change or a different native orchestrator session changes that behavior. Delegated agents otherwise
-use their selected harness's normal installed extensions, skills, and tools. See `references/STARTUP.md` for
+use their selected harness's normal installed extensions, skills, and tools. See `references/startup.md` for
 session state, configuration, pane layout, and agent startup.
 
-The optional Completion Gate in `references/JEV.md` uses Jev only after diff review and
+The optional Completion Gate in `references/jev.md` uses Jev only after diff review and
 deterministic project verification, to recommend completion or a bounded follow-up
 action. It cannot override deterministic failures, policy, or orchestrator review;
 when disabled or unavailable, the existing workflow remains unchanged.
@@ -38,7 +38,7 @@ through it; `explorer` and `fixer` never hand work directly to each other.
 The skill requires `HERDR_ENV=1`. Herdr pane and agent mechanics remain the responsibility of the
 existing `herdr` skill.
 
-For session-state policy and reuse rules, see [`references/STARTUP.md`](references/STARTUP.md).
+For session-state policy and reuse rules, see [`references/startup.md`](references/startup.md).
 From the repository root, inspect the session or persist a confirmed role selection (`H`, `M`,
 and `E` stand for the selected values):
 
@@ -53,11 +53,11 @@ skills/agent-orchestration/scripts/sessionctl set-role --role explorer --harness
 | --- | --- |
 | `SKILL.md` | Roles, workflow, routing, context routing and unit sizing, per-role boundaries and handoff formats, delegation mechanics, review and retry. |
 | `README.md` | Skill overview and file layout. |
-| `references/STARTUP.md` | Persisted session state, pane layout, agent resolution and reuse rules, and per-role harness/model/effort configuration and start commands. |
-| `references/RECOVERY.md` | Submission failures, timeout, `blocked`, and stuck-agent handling. |
-| `references/PARALLEL.md` | Policy for bounded, read-only parallel Explorer batches, admission, result collection, and orchestrator convergence. |
-| `scripts/parallel_validate` | Pipe one JSON object on stdin, for example `printf '%s\n' "$json" | scripts/parallel_validate`; `mode` is `admission` or `convergence` (payloads in `references/PARALLEL.md`). |
-| `scripts/sessionctl` | Stdlib-only session-state inspector and role-configuration persistence CLI; see `references/STARTUP.md` for policy. |
-| `references/JEV.md` | Completion Gate policy, with the multi-gate overview and Explorer Gate pointer. |
-| `references/EXPLORER_GATE.md` | Optional post-Explorer evidence-sufficiency policy, thresholds, conservative action rules, and integration. |
+| `references/startup.md` | Persisted session state, pane layout, agent resolution and reuse rules, and per-role harness/model/effort configuration and start commands. |
+| `references/recovery.md` | Submission failures, timeout, `blocked`, and stuck-agent handling. |
+| `references/parallel.md` | Policy for bounded, read-only parallel Explorer batches, admission, result collection, and orchestrator convergence. |
+| `scripts/parallel_validate` | Pipe one JSON object on stdin, for example `printf '%s\n' "$json" | scripts/parallel_validate`; `mode` is `admission` or `convergence` (payloads in `references/parallel.md`). |
+| `scripts/sessionctl` | Stdlib-only session-state inspector and role-configuration persistence CLI; see `references/startup.md` for policy. |
+| `references/jev.md` | Completion Gate policy, with the multi-gate overview and Explorer Gate pointer. |
+| `references/explorer-gate.md` | Optional post-Explorer evidence-sufficiency policy, thresholds, conservative action rules, and integration. |
 | `scripts/jevctl` | Stdlib-only CLI for `doctor`, `completion-gate`, and `explorer-gate`; `doctor` makes no model request. |

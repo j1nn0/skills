@@ -29,7 +29,7 @@ Do not run it before the Explorer returns, before orchestrator review, on an uns
 
 ### Parallel Explorer batches
 
-For a batch admitted under [`PARALLEL.md`](PARALLEL.md), collect and synthesize the sibling evidence first, then make zero or one Explorer Gate call for the shared parent objective—never a separate call per Explorer. Zero calls are valid when the gate is disabled or the combined request is otherwise ineligible; at most one reviewed summary may be submitted. This does not change gate eligibility, schema, thresholds, or semantics.
+For a batch admitted under [`parallel.md`](parallel.md), collect and synthesize the sibling evidence first, then make zero or one Explorer Gate call for the shared parent objective—never a separate call per Explorer. Zero calls are valid when the gate is disabled or the combined request is otherwise ineligible; at most one reviewed summary may be submitted. This does not change gate eligibility, schema, thresholds, or semantics.
 
 ## Settled-state contract and privacy
 
@@ -101,7 +101,7 @@ The gate may add a cautious hold; it cannot grant permission, broaden scope, or 
 
 Unavailable results normalize to `action: "orchestrator_review"`, `next_step: "orchestrator_review"`, `auto_apply: false`, `would_block: false`, `evidence_sufficient: false`, null evidence answers, and a sanitized reason. Transport failures, invalid responses, missing commands, invalid config, interruption, and disabled/incomplete-review short circuits do not authorize a fixer. The orchestrator continues from its own evidence review, gathers missing facts when useful, or escalates; Jev failure alone does not fail the task.
 
-The Explorer Gate precedes implementation. The separate Completion Gate remains post-implementation and retains its existing input, deterministic-verification requirement, thresholds, action set, and completion decision behavior; see [`JEV.md`](JEV.md). Do not call the Completion Gate to settle an Explorer claim, and do not let either gate replace the other gate's lifecycle.
+The Explorer Gate precedes implementation. The separate Completion Gate remains post-implementation and retains its existing input, deterministic-verification requirement, thresholds, action set, and completion decision behavior; see [`jev.md`](jev.md). Do not call the Completion Gate to settle an Explorer claim, and do not let either gate replace the other gate's lifecycle.
 
 Limit Explorer investigation to at most **three rounds per objective**. For this evidence loop, progress means a new or materially changed evidence fact: a source observation newly corroborated or contradicted, or a specific unknown resolved or narrowed. Rephrasing a claim, repeating a source, or increasing confidence language without changing evidence facts is not progress. After two consecutive Explorer attempts on the same evidence question make no such progress, change the question or strategy, re-scope, or escalate instead of repeating the same probe; never exceed the three-round objective cap. This evidence-progress bound complements rather than resets the existing two-attempt implementation/review rule.
 

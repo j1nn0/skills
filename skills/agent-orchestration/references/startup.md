@@ -54,7 +54,7 @@ Treat that two-role layout as an invariant to satisfy from the current layout, n
 
 ### Parallel Explorer batches
 
-For an admitted two- or three-Explorer batch in [`PARALLEL.md`](PARALLEL.md), use distinct names such as `explorer`, `explorer-2`, and `explorer-3`. Before each prompt, use `herdr agent get` to independently confirm that target is idle, in the current tab, and matches the settled Explorer harness, model, and effort. Additional Explorer panes may stack in the delegated area as space permits; the fixed-ratio pane examples below are for ordinary two-role placement only, not batch geometry. Never repurpose a Fixer agent or pane, use a cross-tab agent, or disturb user-owned panes.
+For an admitted two- or three-Explorer batch in [`parallel.md`](parallel.md), use distinct names such as `explorer`, `explorer-2`, and `explorer-3`. Before each prompt, use `herdr agent get` to independently confirm that target is idle, in the current tab, and matches the settled Explorer harness, model, and effort. Additional Explorer panes may stack in the delegated area as space permits; the fixed-ratio pane examples below are for ordinary two-role placement only, not batch geometry. Never repurpose a Fixer agent or pane, use a cross-tab agent, or disturb user-owned panes.
 
 ## Resolution
 
@@ -92,7 +92,7 @@ Before using a delegated role:
    ```
 
    When the tab already holds user panes, check the geometry first with `herdr pane layout --pane "$HERDR_PANE_ID"` and place the split so no pane becomes unusable.
-8. Start the role with the configuration settled for it. `agent start` returning `agent_not_ready` is not a failed start: the agent was detected but is blocked at a startup prompt, and its name stays usable for `herdr agent read` and `herdr agent send-keys`. Inspect and unblock it through the permission path ("Permission and approval UIs" in `RECOVERY.md`), and wait for idle before prompting. Do not re-run `agent start` and do not give up on the role.
+8. Start the role with the configuration settled for it. `agent start` returning `agent_not_ready` is not a failed start: the agent was detected but is blocked at a startup prompt, and its name stays usable for `herdr agent read` and `herdr agent send-keys`. Inspect and unblock it through the permission path ("Permission and approval UIs" in `recovery.md`), and wait for idle before prompting. Do not re-run `agent start` and do not give up on the role.
 9. Verify after startup with `herdr agent get <resolved-name>` that its `tab_id` equals `$HERDR_TAB_ID` and that kind, model, and effort match the settled configuration. For the ordinary two-role layout, once both roles are live, confirm the order with:
 
    ```bash
