@@ -28,6 +28,7 @@ EXPECTED_CASE_IDS = [
     "13-config-unavailable",
     "14-incomplete-verification",
     "15-stale-result",
+    "16-parallel-convergence",
 ]
 
 
@@ -200,6 +201,49 @@ class BehaviorEvalSuiteTest(unittest.TestCase):
         self.assertIn("settled", case["scenario"].lower())
         self.assertTrue(commands)
         self.assertTrue(all(command in settled_text for command in commands))
+
+    def test_parallel_dispatch_judges_dispatch_without_future_convergence(self):
+        case = self.case("04-independent-parallel")
+        required_invariants = {item["invariant"] for item in case["required"]}
+        forbidden_invariants = {item["invariant"] for item in case["forbidden"]}
+
+        self.assertEqual(["parallel_explorers"], case["expected_routes"])
+        self.assertNotIn("orchestrator_convergence", required_invariants)
+        self.assertIn("explorer_read_only", required_invariants)
+        self.assertIn("no_sibling_output_sharing", forbidden_invariants)
+        self.assertIn("no_parallel_fixers", forbidden_invariants)
+
+    def test_parallel_convergence_judges_orchestrator_synthesis_after_the_batch(self):
+        case = self.case("16-parallel-convergence")
+        required_text = " ".join(item["text"].lower() for item in case["required"])
+        forbidden_by_invariant = {item["invariant"]: item["text"].lower() for item in case["forbidden"]}
+        reassess_without_prompt = {
+            "route": "reassess",
+            "rationale": "",
+            "handoffs": [],
+            "user_message": "",
+            "next_actions": [],
+        }
+
+        self.assertEqual(["reassess"], case["expected_routes"])
+        self.assertTrue(
+            all(check["passed"] for check in run_behavior_eval.deterministic_checks(case, reassess_without_prompt))
+        )
+        self.assertIn("orchestrator_convergence", {item["invariant"] for item in case["required"]})
+        for element in ("synthesis", "provenance", "tension", "gap"):
+            self.assertIn(element, required_text)
+        self.assertIn("fixer", forbidden_by_invariant["no_fixer_with_unresolved_uncertainty"])
+        self.assertIn("no_sibling_output_sharing", forbidden_by_invariant)
+        self.assertEqual(3, case["scenario"].count("<HERDR_RESULT>"))
+
+    def test_orchestrator_convergence_is_still_evaluated(self):
+        referenced = {
+            item["invariant"]
+            for case in self.suite["cases"]
+            for item in case["required"] + case["forbidden"]
+        }
+        self.assertIn("orchestrator_convergence", referenced)
+        self.assertFalse(self.suite["invariants"]["orchestrator_convergence"]["critical"])
 
     def case(self, case_id):
         return next(case for case in self.suite["cases"] if case["id"] == case_id)

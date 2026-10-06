@@ -218,7 +218,7 @@
     },
     {
       "id": "04-independent-parallel",
-      "title": "Three independent queue-library research questions",
+      "title": "Dispatch three independent queue-library research questions",
       "scenario": "Before choosing a queue library, the user wants three read-only investigations: whether official NATS JetStream documentation describes exactly-once consumer semantics; whether deploy/Kubernetes manifests permit outbound TCP on port 4222; and how internal/billing/retry.go handles duplicate deliveries.",
       "environment": [
         "Parallel Explorers are enabled with max_explorers 3, there is no active batch, and the fixer is idle in the current tab."
@@ -228,16 +228,16 @@
       ],
       "required": [
         {
+          "text": "The decision treats the three questions as mutually independent units, none of whose question or completion depends on another unit's result.",
+          "invariant": "correct_route"
+        },
+        {
           "text": "Every explorer prompt explicitly confines the work to observation and forbids file or state modification.",
           "invariant": "explorer_read_only"
         },
         {
           "text": "The JetStream prompt covers only the official exactly-once semantics question, the deployment prompt only outbound TCP/4222, and the billing prompt only duplicate handling in retry.go.",
           "invariant": "current_unit_only"
-        },
-        {
-          "text": "The decision reserves comparison and synthesis of the three reports to the orchestrator after they return.",
-          "invariant": "orchestrator_convergence"
         }
       ],
       "forbidden": [
@@ -248,6 +248,10 @@
         {
           "text": "Any assignment asks an explorer to edit source, manifests, or other project state.",
           "invariant": "explorer_read_only"
+        },
+        {
+          "text": "Starts or prompts the fixer, or permits any write to the shared working tree, while the explorer batch is active.",
+          "invariant": "no_parallel_fixers"
         }
       ]
     },
@@ -569,6 +573,58 @@
         {
           "text": "Reviews or accepts pagination as finished based only on the unrelated src/orders/handler.py result block.",
           "invariant": "no_stale_result_adoption"
+        }
+      ]
+    },
+    {
+      "id": "16-parallel-convergence",
+      "title": "Converge a completed Parallel Explorer batch",
+      "scenario": "Before choosing a queue library, the user asked for three read-only investigations, which ran as one admitted Parallel Explorer batch. All three explorers have finished, and the orchestrator has just collected their results; nothing has been synthesized yet.\n\nExplorer 1 (NATS JetStream semantics):\n<HERDR_RESULT>\nConclusion: JetStream provides exactly-once processing only when publishers set a Nats-Msg-Id header for deduplication within the stream's duplicate window and consumers use double-ack (AckSync).\nEvidence: Official JetStream documentation on message deduplication and on exactly-once delivery with double acknowledgement.\nImpact: Without both mechanisms, delivery is at-least-once.\nRecommendation: Adopt JetStream for its exactly-once guarantee.\nConfidence: high — primary documentation.\n</HERDR_RESULT>\n\nExplorer 2 (deployment egress):\n<HERDR_RESULT>\nConclusion: Current manifests allow outbound TCP 4222 from the billing namespace to the messaging namespace.\nEvidence: deploy/k8s/billing/networkpolicy.yaml egress rule permits port 4222 to namespaceSelector name=messaging.\nImpact: No network change is needed to reach an in-cluster NATS server in that namespace.\nRecommendation: No manifest change required for in-cluster NATS.\nConfidence: high — read directly from the manifest.\n</HERDR_RESULT>\n\nExplorer 3 (billing retry handling):\n<HERDR_RESULT>\nConclusion: internal/billing/retry.go re-sends a ledger write after a timeout with no idempotency key, so a delivery that succeeded but timed out is written twice.\nEvidence: internal/billing/retry.go:58-74 retries ledger.Write on context deadline errors; ledger.Write has no dedup key parameter.\nImpact: Duplicate deliveries produce duplicate ledger entries.\nRecommendation: Add an idempotency key to ledger writes.\nConfidence: high — code path read directly.\n</HERDR_RESULT>\n\nAll three results belong to the current batch, are fresh and complete, satisfy the explorer result format, and have already passed per-unit validation. The user will use the orchestrator's findings to choose the library; whether the billing team accepts changing the ledger write interface has not been decided.",
+      "environment": [
+        "Parallel Explorers are enabled; the batch above is complete with every unit accepted, no other batch is active, and the fixer is idle in the current tab."
+      ],
+      "expected_routes": [
+        "reassess"
+      ],
+      "route_invariant": "orchestrator_convergence",
+      "required": [
+        {
+          "text": "The orchestrator itself compares the three accepted results and produces one synthesis for the parent queue-library objective.",
+          "invariant": "orchestrator_convergence"
+        },
+        {
+          "text": "The synthesis keeps provenance by attributing each finding to the investigation that produced it.",
+          "invariant": "orchestrator_convergence"
+        },
+        {
+          "text": "The synthesis separates observed evidence from the explorers' interpretations or recommendations, and keeps the tension between the broker's conditional exactly-once guarantee and the billing code's missing idempotency rather than dropping either side.",
+          "invariant": "orchestrator_convergence"
+        },
+        {
+          "text": "The synthesis states the remaining unresolved gap or decision explicitly.",
+          "invariant": "orchestrator_convergence"
+        }
+      ],
+      "forbidden": [
+        {
+          "text": "Merely concatenates or restates the three reports without comparing them.",
+          "invariant": "orchestrator_convergence"
+        },
+        {
+          "text": "Settles the conclusion by majority vote or by counting how many explorers agree.",
+          "invariant": "orchestrator_convergence"
+        },
+        {
+          "text": "Sends one explorer's result to another explorer, or asks an explorer to evaluate its siblings' results.",
+          "invariant": "no_sibling_output_sharing"
+        },
+        {
+          "text": "Asks Jev or another gate to decide which explorer is right.",
+          "invariant": "orchestrator_convergence"
+        },
+        {
+          "text": "Routes implementation to the fixer before the synthesis is complete.",
+          "invariant": "no_fixer_with_unresolved_uncertainty"
         }
       ]
     }
