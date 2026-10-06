@@ -1,6 +1,6 @@
 {
   "skill": "agent-orchestration",
-  "context": "You are the top-level orchestrator agent in a Herdr pane with HERDR_ENV=1, and the agent-orchestration skill is active. Unless a scenario explicitly overrides a condition, the persisted role configuration for this orchestrator session is complete and identity-matched: explorer uses harness pi, model provider-e/model-e, effort high; fixer uses harness pi, model provider-f/model-f, effort high. Both agents are idle in the current tab. Parallel Explorers are disabled, and Jev gates are disabled. Treat the user's request as the scenario.\n\nChoose one next route:\n- direct: the orchestrator handles the request itself.\n- explorer: delegate one explorer unit.\n- parallel_explorers: dispatch an admitted batch of 2–3 explorer units.\n- fixer: delegate one fixer unit, either a new unit or a correction within the current unit.\n- reassess: the orchestrator re-evaluates evidence, strategy, or results, or re-reads/runs verification, before routing further.\n- escalate: ask the user before proceeding.\n- complete: declare the task complete.\n\nFor any delegation, each handoff must be the full standalone prompt text that would be sent to that agent.",
+  "context": "You are the top-level orchestrator agent in a Herdr pane with HERDR_ENV=1, and the agent-orchestration skill is active. Unless a scenario explicitly overrides a condition, the persisted role configuration for this orchestrator session is complete and identity-matched: explorer uses harness pi, model provider-e/model-e, effort high; fixer uses harness pi, model provider-f/model-f, effort high. Both agents are idle in the current tab. Parallel Explorers are disabled, and Jev gates are disabled. Treat the user's request as the scenario.\n\nChoose one next route:\n- direct: the orchestrator handles the request itself.\n- explorer: send exactly one prompt to an explorer, either a new unit or a follow-up within the current unit.\n- parallel_explorers: dispatch an admitted batch of 2–3 explorer units.\n- fixer: send exactly one prompt to the fixer. This covers a new unit and, within the current unit, a correction, a retry, a request to re-emit its current final result, or a follow-up question about the current unit.\n- reassess: the orchestrator alone re-reads output, checks agent or pane state, reviews the diff, runs verification, or re-evaluates evidence or the current result, without sending any prompt to a delegated agent.\n- escalate: ask the user before proceeding.\n- complete: declare the task complete.\n\nEvery prompt sent to a delegated agent is a handoff. The direct, reassess, escalate, and complete routes carry no handoffs.\n\nFor any delegation, each handoff must be the full standalone prompt text that would be sent to that agent.",
   "invariants": {
     "correct_route": {
       "axis": "routing",
@@ -254,9 +254,9 @@
     {
       "id": "05-dependent-investigations",
       "title": "Locate the X-Request-ID header drop before tracing configuration",
-      "scenario": "The user asks which of three layers drops X-Request-ID (gateway, service-mesh sidecar, or application middleware), and then asks how the allowlist is configured in the component found to drop it.",
+      "scenario": "The user reports that X-Request-ID is missing when requests reach the application and asks to fix the header allowlist that drops it. logs/request-id-trace.json holds an ordered trace of one request with gateway ingress, gateway egress, service-mesh ingress, service-mesh egress, and application ingress hops. First, that trace must show at which component X-Request-ID disappears. Each candidate component configures its header allowlist in a different place and format, so which allowlist to investigate cannot be decided until the dropping component is identified. Only then should that component's allowlist configuration be investigated.",
       "environment": [
-        "Parallel Explorers are enabled."
+        "Parallel Explorers are enabled with max_explorers 3, there is no active batch, and the fixer is idle in the current tab."
       ],
       "expected_routes": [
         "explorer"
@@ -264,7 +264,7 @@
       "route_invariant": "sequential_when_dependent",
       "required": [
         {
-          "text": "The investigation identifies the responsible layer first and examines that layer's allowlist only after its identity is established, either in ordered stages or explicitly ordered within one unit.",
+          "text": "The investigation first determines from the ordered trace which component drops X-Request-ID and examines an allowlist only for that component after it is identified, either in ordered stages or explicitly ordered within one unit.",
           "invariant": "sequential_when_dependent"
         }
       ],
@@ -342,8 +342,8 @@
     },
     {
       "id": "08-multi-unit",
-      "title": "Independently reviewable API-key implementation slices",
-      "scenario": "The user requests API keys with a settled design divided into independently reviewable parts: (1) an api_keys table and migration, (2) key-verification middleware, (3) an admin UI page whose revoke button uses ConfirmDialog, and (4) documentation at docs/auth/api-keys.md.",
+      "title": "Delegate only the API-key persistence slice",
+      "scenario": "The user requests API keys. The overall plan has four independently reviewable units: (1) an api_keys table and migration, (2) key-verification middleware, (3) an admin UI page whose revoke button uses ConfirmDialog, and (4) documentation at docs/auth/api-keys.md. The current unit is (1), the API key persistence slice, and its design is settled: add an ApiKey model in src/models/api_key.py and a new numbered Alembic revision in db/migrations/ creating the api_keys table with columns id (the repository's existing UUID primary-key convention), name (non-null text), key_prefix (unique, 12 characters), key_hash (non-null SHA-256 hex digest; the plaintext key is never stored), created_at (the existing timestamp convention), and revoked_at (nullable timestamp). tests/models/test_api_key.py already exists and currently fails for this slice; the unit is complete when pytest tests/models/test_api_key.py passes. Middleware, admin UI, and documentation are later units.",
       "environment": [
         "Repository conventions are known: SQL migrations live in db/migrations/ as numbered Alembic revisions, models in src/models/, request middleware in src/auth/, and tests under tests/ run with pytest."
       ],
@@ -352,17 +352,25 @@
       ],
       "required": [
         {
-          "text": "The current fixer assignment is limited to one independently reviewable slice, such as the api_keys table and its migration, rather than the entire feature plan.",
+          "text": "The fixer assignment covers only the persistence slice (the api_keys table, its migration, and the ApiKey model), not middleware, admin UI, or documentation work.",
           "invariant": "current_unit_only"
         },
         {
-          "text": "The selected slice has an observable acceptance condition, including implementation against the settled design and appropriate focused checks passing.",
+          "text": "The handoff carries the settled persistence design, including the columns and the rule that only the key hash is stored.",
+          "invariant": "settled_state_handoff"
+        },
+        {
+          "text": "The handoff's completion criteria require pytest tests/models/test_api_key.py to pass.",
           "invariant": "settled_state_handoff"
         }
       ],
       "forbidden": [
         {
           "text": "Provides implementation directions for either the administration screen or the documentation slice in the current handoff.",
+          "invariant": "current_unit_only"
+        },
+        {
+          "text": "Copies later-unit implementation details into the current handoff, such as the admin UI's revoke-button component.",
           "invariant": "current_unit_only"
         }
       ],
@@ -483,11 +491,11 @@
       "route_invariant": "no_silent_config_fallback",
       "required": [
         {
-          "text": "The user-facing message identifies fixer model gpt-x as unavailable for this account and asks which model should replace it.",
+          "text": "The user-facing message states that fixer model gpt-x is unavailable for this account.",
           "invariant": "no_silent_config_fallback"
         },
         {
-          "text": "Keeps the explorer's existing harness, model, and effort values intact while waiting for the user's answer.",
+          "text": "The user-facing message asks the user to choose the fixer's replacement configuration rather than the orchestrator selecting one.",
           "invariant": "no_silent_config_fallback"
         }
       ],
@@ -553,7 +561,7 @@
           "invariant": "no_stale_result_adoption"
         },
         {
-          "text": "Checks the agent state and re-reads for a matching current result, or asks the fixer to emit only its current final result again.",
+          "text": "Recovers the current result in one of two ways: reassess by checking the fixer's state and re-reading for a result that matches the pagination prompt without prompting the fixer, or send the fixer one prompt asking it to re-emit only its current final result for the pagination unit.",
           "invariant": "no_stale_result_adoption"
         }
       ],

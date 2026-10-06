@@ -1,4 +1,5 @@
 import importlib.util
+import re
 import unittest
 from pathlib import Path
 
@@ -111,6 +112,68 @@ class BehaviorEvalSuiteTest(unittest.TestCase):
             self.assertIn(outstanding_check, required_text)
         self.assertIn("no_completion_without_verification", forbidden_invariants)
         self.assertIn("review_actual_diff", {item["invariant"] for item in case["required"]})
+
+    def test_config_unavailable_judges_actions_not_restated_explorer_config(self):
+        case = self.case("13-config-unavailable")
+        invariants = self.suite["invariants"]
+
+        self.assertFalse(any("explorer" in item["text"].lower() for item in case["required"]))
+        self.assertTrue(any("explorer" in item["text"].lower() for item in case["forbidden"]))
+        self.assertTrue(any("replacement" in item["text"].lower() for item in case["required"]))
+        self.assertTrue(invariants["no_silent_config_fallback"]["critical"])
+        self.assertTrue(
+            all(
+                item["invariant"] == "no_silent_config_fallback"
+                for item in case["required"] + case["forbidden"]
+            )
+        )
+
+    def test_route_taxonomy_counts_handoffs_and_accepts_fixer_re_emit_request(self):
+        self.assertTrue(run_behavior_eval.expected_handoff_count("reassess", 0))
+        self.assertFalse(run_behavior_eval.expected_handoff_count("reassess", 1))
+        self.assertTrue(run_behavior_eval.expected_handoff_count("fixer", 1))
+        self.assertIn("- reassess:", self.suite["context"])
+        self.assertIn("re-emit", self.suite["context"])
+
+        case = self.case("15-stale-result")
+        self.assertEqual({"reassess", "fixer"}, set(case["expected_routes"]))
+        re_emit_request = {
+            "route": "fixer",
+            "rationale": "",
+            "handoffs": ["Re-emit only your current final result for the pagination unit."],
+            "user_message": "",
+            "next_actions": [],
+        }
+        checks = run_behavior_eval.deterministic_checks(case, re_emit_request)
+        self.assertTrue(all(check["passed"] for check in checks))
+
+    def test_dependent_investigation_scenario_makes_the_second_target_depend_on_the_first(self):
+        case = self.case("05-dependent-investigations")
+        scenario = case["scenario"].lower()
+
+        self.assertEqual(["explorer"], case["expected_routes"])
+        self.assertEqual("sequential_when_dependent", case["route_invariant"])
+        self.assertIn("trace", scenario)
+        self.assertIn("allowlist", scenario)
+        self.assertLess(scenario.index("trace"), scenario.rindex("allowlist"))
+        self.assertTrue(any("enabled" in item.lower() for item in case["environment"]))
+        self.assertTrue(
+            any(item["invariant"] == "sequential_when_dependent" for item in case["forbidden"])
+        )
+
+    def test_multi_unit_scenario_settles_the_current_unit_and_its_verification(self):
+        case = self.case("08-multi-unit")
+        commands = re.findall(r"pytest [\w/.-]+", case["scenario"])
+        settled_text = " ".join(
+            item["text"] for item in case["required"] if item["invariant"] == "settled_state_handoff"
+        )
+
+        self.assertIn("ConfirmDialog", case["scenario"])
+        self.assertIn("ConfirmDialog", {item["marker"] for item in case["handoff_must_not_contain"]})
+        self.assertIn("current unit", case["scenario"].lower())
+        self.assertIn("settled", case["scenario"].lower())
+        self.assertTrue(commands)
+        self.assertTrue(all(command in settled_text for command in commands))
 
     def case(self, case_id):
         return next(case for case in self.suite["cases"] if case["id"] == case_id)
