@@ -97,20 +97,29 @@ class BehaviorEvalSuiteTest(unittest.TestCase):
         self.assertIn("preserving provenance and contradictions rather than voting", skill_text)
         self.assertNotIn("keeping each accepted finding attributable", skill_text)
 
-    def test_concurrency_entry_routes_to_the_parallel_reference(self):
+    def test_parallel_reference_routing_lives_in_batches_and_workflow(self):
         skill_text = SKILL_PATH.read_text(encoding="utf-8")
         concurrency = skill_text.split("## Concurrency\n", 1)[1].split("\n## ", 1)[0]
-        entry = concurrency.strip().split("\n\n", 1)[0].lower()
-        batches = concurrency.split("### Parallel Explorer batches", 1)[1]
+        concurrency_entry = concurrency.split("### Parallel Explorer batches", 1)[0]
+        batches = concurrency.split("### Parallel Explorer batches", 1)[1].strip()
         workflow = skill_text.split("## Workflow\n", 1)[1].split("\n## ", 1)[0]
+        batches_routing = batches.split(". ", 1)[0].lower()
 
-        self.assertIn("read [`parallel.md`](references/parallel.md)", entry)
+        self.assertNotIn("read [`parallel.md`]", concurrency_entry.lower())
+        self.assertTrue(batches_routing.startswith("read [`parallel.md`](references/parallel.md)"))
         for operation in ("admission", "dispatch", "collection", "resume", "convergence"):
-            self.assertIn(operation, entry)
-        self.assertIn("authoritative", entry)
-        self.assertEqual(1, skill_text.lower().count("read [`parallel.md`]"))
-        self.assertNotIn("Read [`parallel.md`]", batches)
-        self.assertNotIn("parallel.md", workflow)
+            self.assertIn(operation, batches_routing)
+        self.assertIn("authoritative", batches_routing)
+
+        workflow_trigger = " ".join(workflow.split()).lower()
+        self.assertIn(
+            "if parallel explorers may be appropriate, read [`parallel.md`](references/parallel.md) "
+            "before deciding admission or dispatch",
+            workflow_trigger,
+        )
+        for detail in ("two or three", "sibling", "provenance", "voting", "jev", "checklist"):
+            self.assertNotIn(detail, workflow.lower())
+        self.assertEqual(2, skill_text.lower().count("read [`parallel.md`]"))
         for summary in ("two or three independent read-only Explorer units", "do not share sibling raw outputs",
                         "preserving provenance and contradictions rather than voting"):
             self.assertIn(summary, batches)
