@@ -598,7 +598,7 @@
           "invariant": "orchestrator_convergence"
         },
         {
-          "text": "The decision explicitly preserves provenance during convergence by keeping each finding attributable to the investigation that produced it, by explorer or by investigation such as the JetStream documentation, deployment manifests, or billing code; a general intent to combine, summarize, or review the reports does not satisfy this.",
+          "text": "The decision's convergence plan keeps accepted findings traceable to their source investigations, so the source of each finding remains identifiable after synthesis, for example by tying the exactly-once conditions to the JetStream documentation, the egress finding to the deployment manifests, and the duplicate-write risk to the billing retry code. It need not use the words provenance or attribution or number the explorers. Generic intent such as combining, summarizing, or reviewing the findings, or bare topic labels without their evidence sources, does not satisfy this.",
           "invariant": "orchestrator_convergence"
         },
         {

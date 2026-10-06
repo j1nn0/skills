@@ -272,6 +272,21 @@ class BehaviorEvalSuiteTest(unittest.TestCase):
         self.assertTrue(invariants["no_sibling_output_sharing"]["critical"])
         self.assertEqual(3, case["scenario"].count("<HERDR_RESULT>"))
 
+    def test_parallel_convergence_grades_provenance_by_source_traceability(self):
+        case = self.case("16-parallel-convergence")
+        provenance = [item["text"].lower() for item in case["required"] if "traceable" in item["text"].lower()]
+
+        self.assertEqual(1, len(provenance))
+        text = provenance[0]
+        self.assertIn("source", text)
+        for source in ("jetstream documentation", "deployment manifests", "billing retry code"):
+            self.assertIn(source, text)
+        self.assertIn("need not use the words provenance", text)
+        self.assertIn("number the explorers", text)
+        for generic in ("combining", "summarizing", "reviewing"):
+            self.assertIn(generic, text)
+        self.assertIn("does not satisfy", text)
+
     def test_orchestrator_convergence_is_still_evaluated(self):
         referenced = {
             item["invariant"]
