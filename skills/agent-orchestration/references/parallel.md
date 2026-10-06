@@ -91,7 +91,12 @@ A missing, malformed, rejected, or failed result affects only that unit. Preserv
 
 ## Convergence and resume
 
-After collection, the Orchestrator alone synthesizes one result for the parent objective. Separate observed evidence from each Explorer's interpretation, preserve contradictions and source traceability by keeping each accepted finding tied to the Explorer evidence or investigation that supports it, and state unresolved gaps. Before treating convergence as complete, check that every accepted finding in the synthesis is still traceable to its supporting Explorer evidence or investigation. Never majority-vote, concatenate sibling reports into a model prompt, or ask Jev to choose which Explorer is right. If evidence conflicts or a conclusion depends on a sibling result, ask one focused sequential follow-up Explorer after the batch converges.
+After collection, the Orchestrator alone synthesizes one result for the parent objective. Separate observed evidence from each Explorer's interpretation, preserve contradictions and source traceability by keeping each accepted finding tied to the Explorer evidence or investigation that supports it, and state unresolved gaps. Never majority-vote, concatenate sibling reports into a model prompt, or ask Jev to choose which Explorer is right. If evidence conflicts or a conclusion depends on a sibling result, ask one focused sequential follow-up Explorer after the batch converges.
+
+Before completing convergence:
+
+- Keep every accepted finding paired with the investigation or evidence source that supports it; topic names alone are not enough.
+- After combining the findings, verify that no accepted finding has lost that source association.
 
 The helper's `mode: "convergence"` accepts unit statuses `accepted`, `failed`, `incomplete`, `pending`, or `running`, and separates active work, recovery, and terminal outcomes:
 

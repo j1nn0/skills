@@ -68,17 +68,26 @@ class BehaviorEvalSuiteTest(unittest.TestCase):
         }
         self.assertTrue(critical.issubset(referenced), f"Unreferenced critical invariants: {critical - referenced}")
 
-    def test_parallel_convergence_checks_every_finding_before_completion(self):
+    def test_parallel_convergence_has_a_two_item_source_checklist(self):
         parallel_text = (SKILL_PATH.parent / "references" / "parallel.md").read_text(encoding="utf-8")
-        check = next(
-            sentence
-            for sentence in parallel_text.split(". ")
-            if sentence.startswith("Before treating convergence as complete")
-        ).lower()
+        section = parallel_text.split("## Convergence and resume", 1)[1].split("\n## ", 1)[0]
+        lines = section.splitlines()
+        start = next(index for index, line in enumerate(lines) if line.startswith("Before completing convergence"))
+        items = []
+        for line in lines[start + 1:]:
+            if line.startswith("- "):
+                items.append(line.lower())
+            elif items:
+                break
 
-        self.assertIn("every accepted finding", check)
-        self.assertIn("traceable", check)
-        self.assertIn("explorer evidence or investigation", check)
+        self.assertEqual(2, len(items))
+        self.assertIn("every accepted finding", items[0])
+        self.assertIn("source", items[0])
+        self.assertIn("topic names alone are not enough", items[0])
+        self.assertIn("after combining", items[1])
+        self.assertIn("source association", items[1])
+        self.assertNotIn("Before treating convergence as complete", parallel_text)
+        self.assertIn("keeping each accepted finding tied to the Explorer evidence", parallel_text)
 
     def test_parallel_batch_summary_keeps_the_short_convergence_guidance(self):
         skill_text = SKILL_PATH.read_text(encoding="utf-8")
