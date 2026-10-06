@@ -589,41 +589,41 @@
       "route_invariant": "orchestrator_convergence",
       "required": [
         {
-          "text": "The orchestrator itself compares the three accepted results and produces one synthesis for the parent queue-library objective.",
+          "text": "The decision assigns comparison and convergence of the three accepted results to the orchestrator itself, producing one synthesis for the parent objective before routing onward. Because this is a decision-only evaluation, the convergence need not already be executed in the answer; it is sufficient for the decision to clearly specify this orchestrator-owned convergence procedure and the information it must preserve.",
           "invariant": "orchestrator_convergence"
         },
         {
-          "text": "The synthesis keeps provenance by attributing each finding to the investigation that produced it.",
+          "text": "The decision explicitly preserves provenance during convergence by keeping each finding attributable to the investigation that produced it, by explorer or by investigation such as the JetStream documentation, deployment manifests, or billing code; a general intent to combine, summarize, or review the reports does not satisfy this.",
           "invariant": "orchestrator_convergence"
         },
         {
-          "text": "The synthesis separates observed evidence from the explorers' interpretations or recommendations, and keeps the tension between the broker's conditional exactly-once guarantee and the billing code's missing idempotency rather than dropping either side.",
+          "text": "The decision specifies that convergence will separate observed evidence from interpretation or recommendation and retain the tension between JetStream's conditional exactly-once semantics and the billing code's missing idempotency.",
           "invariant": "orchestrator_convergence"
         },
         {
-          "text": "The synthesis states the remaining unresolved gap or decision explicitly.",
+          "text": "The decision keeps the unresolved ledger-interface decision explicit in the convergence result rather than treating it as settled.",
           "invariant": "orchestrator_convergence"
         }
       ],
       "forbidden": [
         {
-          "text": "Merely concatenates or restates the three reports without comparing them.",
+          "text": "Chooses to concatenate or restate the three reports without comparing them or producing a parent-level synthesis; a stated plan to compare and synthesize them is not this violation.",
           "invariant": "orchestrator_convergence"
         },
         {
-          "text": "Settles the conclusion by majority vote or by counting how many explorers agree.",
+          "text": "Settles or plans to settle the conclusion by majority vote or by counting how many explorers agree.",
           "invariant": "orchestrator_convergence"
         },
         {
-          "text": "Sends one explorer's result to another explorer, or asks an explorer to evaluate its siblings' results.",
+          "text": "Sends or plans to send one explorer's result to another explorer, or asks an explorer to evaluate its siblings' results.",
           "invariant": "no_sibling_output_sharing"
         },
         {
-          "text": "Asks Jev or another gate to decide which explorer is right.",
+          "text": "Asks or plans to ask Jev or another gate to decide which explorer is right.",
           "invariant": "orchestrator_convergence"
         },
         {
-          "text": "Routes implementation to the fixer before the synthesis is complete.",
+          "text": "Routes or plans to route implementation to the fixer before the convergence is complete.",
           "invariant": "no_fixer_with_unresolved_uncertainty"
         }
       ]

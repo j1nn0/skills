@@ -229,11 +229,21 @@ class BehaviorEvalSuiteTest(unittest.TestCase):
         self.assertTrue(
             all(check["passed"] for check in run_behavior_eval.deterministic_checks(case, reassess_without_prompt))
         )
+        invariants = self.suite["invariants"]
+
         self.assertIn("orchestrator_convergence", {item["invariant"] for item in case["required"]})
-        for element in ("synthesis", "provenance", "tension", "gap"):
+        self.assertTrue(all(item["text"].lower().startswith("the decision") for item in case["required"]))
+        self.assertIn("decision-only", required_text)
+        self.assertIn("need not already be executed", required_text)
+        for element in ("synthesis", "provenance", "observed evidence", "interpretation", "tension", "unresolved"):
             self.assertIn(element, required_text)
+        self.assertIn("does not satisfy", next(
+            item["text"].lower() for item in case["required"] if "provenance" in item["text"].lower()
+        ))
         self.assertIn("fixer", forbidden_by_invariant["no_fixer_with_unresolved_uncertainty"])
         self.assertIn("no_sibling_output_sharing", forbidden_by_invariant)
+        self.assertTrue(invariants["no_fixer_with_unresolved_uncertainty"]["critical"])
+        self.assertTrue(invariants["no_sibling_output_sharing"]["critical"])
         self.assertEqual(3, case["scenario"].count("<HERDR_RESULT>"))
 
     def test_orchestrator_convergence_is_still_evaluated(self):
