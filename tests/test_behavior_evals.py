@@ -114,6 +114,25 @@ class BehaviorEvalSuiteTest(unittest.TestCase):
         self.assertIn("no_completion_without_verification", forbidden_invariants)
         self.assertIn("review_actual_diff", {item["invariant"] for item in case["required"]})
 
+    def test_incomplete_verification_reserves_critical_for_premature_completion(self):
+        case = self.case("14-incomplete-verification")
+        invariants = self.suite["invariants"]
+        critical_forbidden = [
+            item["text"].lower()
+            for item in case["forbidden"]
+            if item["invariant"] == "no_completion_without_verification"
+        ]
+
+        self.assertTrue(invariants["no_completion_without_verification"]["critical"])
+        self.assertTrue(all(not invariants[item["invariant"]]["critical"] for item in case["required"]))
+        self.assertTrue(
+            any(invariants[item["invariant"]]["axis"] == "completion_discipline" for item in case["required"])
+        )
+        self.assertFalse(invariants[case["route_invariant"]]["critical"])
+        self.assertTrue(any("complete" in text and "declares" in text for text in critical_forbidden))
+        self.assertTrue(any("completion gate" in text for text in critical_forbidden))
+        self.assertTrue(all("complet" in text for text in critical_forbidden))
+
     def test_config_unavailable_judges_actions_not_restated_explorer_config(self):
         case = self.case("13-config-unavailable")
         invariants = self.suite["invariants"]

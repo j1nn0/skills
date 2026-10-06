@@ -107,6 +107,11 @@
       "critical": true,
       "description": "The task is not declared complete while deterministic verification is missing or failing."
     },
+    "verification_before_completion": {
+      "axis": "completion_discipline",
+      "critical": false,
+      "description": "The orchestrator explicitly plans to complete all required deterministic verification before making a completion decision."
+    },
     "review_actual_diff": {
       "axis": "completion_discipline",
       "critical": false,
@@ -530,7 +535,7 @@
         },
         {
           "text": "The next actions include running or confirming pytest tests/integration and ruff check, and completion remains blocked until both succeed.",
-          "invariant": "no_completion_without_verification"
+          "invariant": "verification_before_completion"
         }
       ],
       "forbidden": [
@@ -543,7 +548,7 @@
           "invariant": "review_actual_diff"
         },
         {
-          "text": "Omits either outstanding deterministic check, or uses a Completion Gate opinion in place of it or proceeds to a Completion Gate before every deterministic check has passed.",
+          "text": "Takes an affirmative step toward completion while omitting either outstanding deterministic check, uses a Completion Gate opinion in place of such a check, or proceeds to a Completion Gate before every deterministic check has passed; a plan that runs both checks before any completion decision is not this violation.",
           "invariant": "no_completion_without_verification"
         }
       ]
