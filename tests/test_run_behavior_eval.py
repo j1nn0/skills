@@ -65,6 +65,20 @@ def synthetic_suite():
     }
 
 
+def response_case_fixture():
+    return {
+        "id": "synthetic-response",
+        "title": "A synthetic response",
+        "evaluation_mode": "response",
+        "scenario": "Summarize the collected evidence for the user.",
+        "environment": [],
+        "required": [
+            {"text": "Include the private response expectation.", "invariant": "required_behavior"}
+        ],
+        "forbidden": [],
+    }
+
+
 def decision(route="explorer", handoffs=None):
     return {
         "route": route,
@@ -347,6 +361,102 @@ class RunBehaviorEvalTest(unittest.TestCase):
         self.assertEqual("correct_route", result["checks"][0]["invariant"])
         self.assertEqual("required_behavior", result["expectations"][0]["invariant"])
         self.assertEqual("context_discipline", result["expectations"][0]["axis"])
+
+    def test_evaluation_mode_defaults_to_decision_and_scopes_decision_context(self):
+        suite = synthetic_suite()
+        suite["decision_context"] = "Choose one next route."
+        decision_case = suite["cases"][0]
+        response_case = response_case_fixture()
+
+        self.assertEqual("decision", run_behavior_eval.evaluation_mode(decision_case))
+        self.assertEqual("response", run_behavior_eval.evaluation_mode(response_case))
+        self.assertIn("Choose one next route.", run_behavior_eval.prompt_context(suite, decision_case))
+        self.assertNotIn("Choose one next route.", run_behavior_eval.prompt_context(suite, response_case))
+
+    def test_validation_accepts_response_cases_without_route_fields(self):
+        suite = synthetic_suite()
+        suite["cases"].append(response_case_fixture())
+
+        self.assertEqual([], run_behavior_eval.validate_suite(suite))
+
+    def test_validation_rejects_unknown_modes_and_route_fields_in_response_mode(self):
+        suite = synthetic_suite()
+        unknown_mode = copy.deepcopy(suite["cases"][0])
+        unknown_mode["id"] = "unknown-mode"
+        unknown_mode["evaluation_mode"] = "execute"
+        routed_response = response_case_fixture()
+        routed_response["expected_routes"] = ["reassess"]
+        suite["cases"].extend([unknown_mode, routed_response])
+
+        errors = run_behavior_eval.validate_suite(suite)
+
+        self.assertTrue(any("evaluation_mode must be one of" in error for error in errors))
+        self.assertTrue(any("expected_routes is not used in response mode" in error for error in errors))
+
+    def test_response_schema_is_strict_and_separate_from_decision_schema(self):
+        schema = run_behavior_eval.response_schema()
+
+        self.assertEqual(["response"], schema["required"])
+        self.assertFalse(schema["additionalProperties"])
+        self.assertNotIn("route", schema["properties"])
+        self.assertIn("route", run_behavior_eval.decision_schema()["properties"])
+
+    def test_prompts_state_their_mode_contract(self):
+        decision_case = synthetic_suite()["cases"][0]
+        response_case = response_case_fixture()
+
+        decision_prompt = run_behavior_eval.build_model_prompt("Context.", "Skill text.", "demo", decision_case)
+        response_prompt = run_behavior_eval.build_model_prompt("Context.", "Skill text.", "demo", response_case)
+
+        self.assertIn("decision-only evaluation", decision_prompt)
+        self.assertNotIn("response evaluation", decision_prompt)
+        self.assertIn("response evaluation", response_prompt)
+        self.assertIn("actual non-mutating answer or synthesis", response_prompt)
+        self.assertIn("completed answer or synthesis", response_prompt)
+        self.assertNotIn("decision-only", response_prompt)
+        self.assertNotIn("execute the task", response_prompt)
+        self.assertIn("Do not start agents, run commands, modify files", response_prompt)
+        self.assertNotIn("private response expectation", response_prompt)
+
+    def test_validate_response_rejects_extra_keys_and_empty_text(self):
+        self.assertEqual({"response": "Synthesis."}, run_behavior_eval.validate_response({"response": "Synthesis."}))
+        for payload in ({"response": "Synthesis.", "route": "reassess"}, {"response": "  "}, {"text": "x"}):
+            with self.subTest(payload=payload):
+                with self.assertRaises(ValueError):
+                    run_behavior_eval.validate_response(payload)
+
+    def test_run_case_once_grades_response_text_without_route_checks(self):
+        suite = synthetic_suite()
+        case = response_case_fixture()
+        skill_path = Path(__file__).parents[1] / "skills" / "agent-orchestration"
+        calls = []
+
+        def fake_codex(prompt, schema, model, effort, cwd, timeout):
+            calls.append((prompt, schema))
+            if len(calls) == 1:
+                return {"response": "The documentation shows X; the code shows Y."}
+            return {"expectations": [{"id": "required-1", "passed": True, "evidence": "X and Y."}]}
+
+        result = run_behavior_eval.run_case_once(
+            case,
+            suite["invariants"],
+            skill_path,
+            suite["context"],
+            "test-model",
+            "low",
+            "grader-model",
+            "medium",
+            15,
+            codex_runner=fake_codex,
+        )
+
+        self.assertTrue(result["pass"])
+        self.assertEqual([], result["checks"])
+        self.assertIsNone(result["decision"])
+        self.assertEqual("The documentation shows X; the code shows Y.", result["response"])
+        self.assertEqual(run_behavior_eval.response_schema(), calls[0][1])
+        self.assertIn("## Response\nThe documentation shows X; the code shows Y.", calls[1][0])
+        self.assertNotIn("Decision JSON", calls[1][0])
 
     def test_codex_environment_preserves_configured_codex_home(self):
         base_environment = {

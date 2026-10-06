@@ -29,6 +29,7 @@ EXPECTED_CASE_IDS = [
     "14-incomplete-verification",
     "15-stale-result",
     "16-parallel-convergence",
+    "17-parallel-convergence-output",
 ]
 
 
@@ -185,8 +186,8 @@ class BehaviorEvalSuiteTest(unittest.TestCase):
         self.assertTrue(run_behavior_eval.expected_handoff_count("reassess", 0))
         self.assertFalse(run_behavior_eval.expected_handoff_count("reassess", 1))
         self.assertTrue(run_behavior_eval.expected_handoff_count("fixer", 1))
-        self.assertIn("- reassess:", self.suite["context"])
-        self.assertIn("re-emit", self.suite["context"])
+        self.assertIn("- reassess:", self.suite["decision_context"])
+        self.assertIn("re-emit", self.suite["decision_context"])
 
         case = self.case("15-stale-result")
         self.assertEqual({"reassess", "fixer"}, set(case["expected_routes"]))
@@ -287,6 +288,34 @@ class BehaviorEvalSuiteTest(unittest.TestCase):
             self.assertIn(generic, text)
         self.assertIn("does not satisfy", text)
 
+    def test_existing_cases_stay_in_decision_mode(self):
+        for case in self.suite["cases"][:16]:
+            with self.subTest(case=case["id"]):
+                self.assertEqual("decision", run_behavior_eval.evaluation_mode(case))
+                self.assertTrue(case["expected_routes"])
+
+    def test_convergence_output_case_grades_the_actual_synthesis(self):
+        planning = self.case("16-parallel-convergence")
+        case = self.case("17-parallel-convergence-output")
+        invariants = self.suite["invariants"]
+        required_text = " ".join(item["text"].lower() for item in case["required"])
+        forbidden_by_invariant = {item["invariant"]: item["text"].lower() for item in case["forbidden"]}
+
+        self.assertEqual("response", run_behavior_eval.evaluation_mode(case))
+        self.assertEqual(planning["scenario"], case["scenario"])
+        self.assertEqual(planning["environment"], case["environment"])
+        self.assertNotIn("expected_routes", case)
+        self.assertTrue(all(item["invariant"] == "orchestrator_convergence" for item in case["required"]))
+        for source in ("jetstream documentation", "networkpolicy manifest", "billing retry code"):
+            self.assertIn(source, required_text)
+        self.assertIn("traceable", required_text)
+        self.assertIn("need not use the words provenance", required_text)
+        for element in ("synthesis", "separates what the evidence shows", "tension", "undecided"):
+            self.assertIn(element, required_text)
+        self.assertIn("no_sibling_output_sharing", forbidden_by_invariant)
+        self.assertTrue(invariants["no_sibling_output_sharing"]["critical"])
+        self.assertTrue(any("settled" in text for text in forbidden_by_invariant.values()))
+
     def test_orchestrator_convergence_is_still_evaluated(self):
         referenced = {
             item["invariant"]
@@ -308,8 +337,8 @@ class BehaviorEvalSuiteTest(unittest.TestCase):
     def test_model_prompt_omits_required_and_forbidden_expectation_text(self):
         skill_text = SKILL_PATH.read_text(encoding="utf-8")
         for case in self.suite["cases"]:
-            prompt = run_behavior_eval.build_decision_prompt(
-                self.suite["context"], skill_text, "agent-orchestration", case
+            prompt = run_behavior_eval.build_model_prompt(
+                run_behavior_eval.prompt_context(self.suite, case), skill_text, "agent-orchestration", case
             )
             for collection in ("required", "forbidden"):
                 for expectation in case[collection]:

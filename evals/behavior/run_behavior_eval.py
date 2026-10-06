@@ -34,6 +34,9 @@ AXES = (
     "completion_discipline",
 )
 DELEGATING_ROUTES = {"explorer": 1, "fixer": 1}
+EVALUATION_MODES = ("decision", "response")
+DEFAULT_EVALUATION_MODE = "decision"
+DECISION_ONLY_KEYS = ("expected_routes", "route_invariant", "handoff_must_not_contain")
 
 
 class BehaviorEvalError(Exception):
@@ -57,6 +60,9 @@ def validate_suite(suite):
             errors.append(f"missing required top-level key: {key}")
         elif not isinstance(suite[key], expected_type):
             errors.append(f"{key} must be a {expected_type.__name__}")
+
+    if "decision_context" in suite and not isinstance(suite["decision_context"], str):
+        errors.append("decision_context must be a str")
 
     invariants = suite.get("invariants")
     known_invariants = set()
@@ -108,17 +114,15 @@ def validate_suite(suite):
             if not isinstance(environment, list) or not all(isinstance(item, str) for item in environment):
                 errors.append(f"{case_label} environment must be a list of strings")
 
-            expected_routes = case.get("expected_routes")
-            if not isinstance(expected_routes, list) or not expected_routes:
-                errors.append(f"{case_label} expected_routes must be a non-empty list")
-            elif any(not isinstance(route, str) or route not in ROUTES for route in expected_routes):
-                errors.append(f"{case_label} expected_routes contains an unknown route")
-
-            route_invariant = case.get("route_invariant", "correct_route")
-            if not isinstance(route_invariant, str):
-                errors.append(f"{case_label} route_invariant must be a string")
-            elif route_invariant not in known_invariants:
-                errors.append(f"{case_label} references unknown invariant: {route_invariant}")
+            mode = case.get("evaluation_mode", DEFAULT_EVALUATION_MODE)
+            if mode not in EVALUATION_MODES:
+                errors.append(f"{case_label} evaluation_mode must be one of {', '.join(EVALUATION_MODES)}")
+            elif mode == "response":
+                for key in DECISION_ONLY_KEYS:
+                    if key in case:
+                        errors.append(f"{case_label} {key} is not used in response mode")
+            else:
+                errors.extend(_decision_case_errors(case, case_label, known_invariants))
 
             expectation_count = 0
             for collection_name in ("required", "forbidden"):
@@ -139,22 +143,39 @@ def validate_suite(suite):
                         errors.append(f"{entry_label} references unknown invariant: {invariant_id}")
             if expectation_count == 0:
                 errors.append(f"{case_label} must define at least one required or forbidden expectation")
+    return errors
 
-            markers = case.get("handoff_must_not_contain", [])
-            if not isinstance(markers, list):
-                errors.append(f"{case_label} handoff_must_not_contain must be a list")
-            else:
-                for marker_index, marker_entry in enumerate(markers, start=1):
-                    marker_label = f"{case_label} handoff_must_not_contain[{marker_index}]"
-                    if not isinstance(marker_entry, dict):
-                        errors.append(f"{marker_label} must be an object")
-                        continue
-                    marker = marker_entry.get("marker")
-                    if not isinstance(marker, str) or not marker.strip():
-                        errors.append(f"{marker_label} marker must be a non-empty string")
-                    invariant_id = marker_entry.get("invariant")
-                    if not isinstance(invariant_id, str) or invariant_id not in known_invariants:
-                        errors.append(f"{marker_label} references unknown invariant: {invariant_id}")
+
+def _decision_case_errors(case, case_label, known_invariants):
+    """Return validation errors for the route and handoff fields of a decision case."""
+    errors = []
+    expected_routes = case.get("expected_routes")
+    if not isinstance(expected_routes, list) or not expected_routes:
+        errors.append(f"{case_label} expected_routes must be a non-empty list")
+    elif any(not isinstance(route, str) or route not in ROUTES for route in expected_routes):
+        errors.append(f"{case_label} expected_routes contains an unknown route")
+
+    route_invariant = case.get("route_invariant", "correct_route")
+    if not isinstance(route_invariant, str):
+        errors.append(f"{case_label} route_invariant must be a string")
+    elif route_invariant not in known_invariants:
+        errors.append(f"{case_label} references unknown invariant: {route_invariant}")
+
+    markers = case.get("handoff_must_not_contain", [])
+    if not isinstance(markers, list):
+        errors.append(f"{case_label} handoff_must_not_contain must be a list")
+    else:
+        for marker_index, marker_entry in enumerate(markers, start=1):
+            marker_label = f"{case_label} handoff_must_not_contain[{marker_index}]"
+            if not isinstance(marker_entry, dict):
+                errors.append(f"{marker_label} must be an object")
+                continue
+            marker = marker_entry.get("marker")
+            if not isinstance(marker, str) or not marker.strip():
+                errors.append(f"{marker_label} marker must be a non-empty string")
+            invariant_id = marker_entry.get("invariant")
+            if not isinstance(invariant_id, str) or invariant_id not in known_invariants:
+                errors.append(f"{marker_label} references unknown invariant: {invariant_id}")
     return errors
 
 
@@ -190,15 +211,39 @@ def decision_schema():
     }
 
 
-def build_decision_prompt(context, skill_text, skill_directory_name, case):
-    """Build the model-under-test prompt without including rubric expectations."""
+def evaluation_mode(case):
+    """Return a case's evaluation mode, defaulting to decision."""
+    return case.get("evaluation_mode", DEFAULT_EVALUATION_MODE)
+
+
+def prompt_context(suite, case):
+    """Return the suite preamble for a case, adding decision-only context in decision mode."""
+    context = suite["context"]
+    if evaluation_mode(case) == "decision" and suite.get("decision_context"):
+        context = f"{context}\n\n{suite['decision_context']}"
+    return context
+
+
+def response_schema():
+    """Return the strict JSON schema for a model-under-test response."""
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {"response": {"type": "string"}},
+        "required": ["response"],
+        "additionalProperties": False,
+    }
+
+
+def _scenario_prompt(context, skill_text, skill_directory_name, case, purpose):
+    """Build the shared prompt sections up to the scenario, without rubric expectations."""
     environment = "\n".join(f"- {assumption}" for assumption in case["environment"])
     if not environment:
         environment = "- None specified."
     return f"""{context}
 
 ## Skill instructions
-The full skill instructions follow. Use them to make this decision.
+The full skill instructions follow. Use them to {purpose}.
 
 --- BEGIN SKILL.md ---
 {skill_text}
@@ -212,7 +257,38 @@ The skill's reference files, if needed, are readable under `skills/{skill_direct
 ## Scenario
 {case['scenario']}
 
-This is a decision-only evaluation. Decide the next step; do not start agents, execute the task, or change state. For each delegated agent, `handoffs` must contain the full standalone prompt that would be sent to that agent. Use an empty `user_message` string when no user-facing message is needed. Return only a JSON decision matching the provided schema."""
+"""
+
+
+def build_response_prompt(context, skill_text, skill_directory_name, case):
+    """Build the response-mode prompt without including rubric expectations."""
+    return _scenario_prompt(
+        context, skill_text, skill_directory_name, case, "produce this response"
+    ) + (
+        "This is a response evaluation. Produce the actual non-mutating answer or synthesis that the skill "
+        "calls for at this point in the scenario. Do not start agents, run commands, modify files, or change "
+        "external state. Reasoning about the supplied evidence and writing the completed answer or synthesis "
+        "in `response` is expected. Return only a JSON object matching the provided schema."
+    )
+
+
+def build_decision_prompt(context, skill_text, skill_directory_name, case):
+    """Build the model-under-test prompt without including rubric expectations."""
+    return _scenario_prompt(
+        context, skill_text, skill_directory_name, case, "make this decision"
+    ) + (
+        "This is a decision-only evaluation. Decide the next step; do not start agents, execute the task, or "
+        "change state. For each delegated agent, `handoffs` must contain the full standalone prompt that would "
+        "be sent to that agent. Use an empty `user_message` string when no user-facing message is needed. "
+        "Return only a JSON decision matching the provided schema."
+    )
+
+
+def build_model_prompt(context, skill_text, skill_directory_name, case):
+    """Build the model-under-test prompt for the case's evaluation mode."""
+    if evaluation_mode(case) == "response":
+        return build_response_prompt(context, skill_text, skill_directory_name, case)
+    return build_decision_prompt(context, skill_text, skill_directory_name, case)
 
 
 def decision_expectations(case):
@@ -260,7 +336,7 @@ def grader_schema(expectations):
 
 
 def build_grader_prompt(case, decision):
-    """Build the grader prompt from the scenario, decision, and hidden rubric."""
+    """Build the grader prompt from the scenario, decision or response, and hidden rubric."""
     environment = "\n".join(f"- {assumption}" for assumption in case["environment"])
     if not environment:
         environment = "- None specified."
@@ -268,6 +344,20 @@ def build_grader_prompt(case, decision):
     numbered_expectations = "\n".join(
         f"{item['id']}: {item['text']}" for item in expectations
     )
+    if evaluation_mode(case) == "response":
+        return f"""Grade the response against the expectations below. Judge each expectation independently and use no partial credit. A required expectation passes only when the response clearly shows the behavior. A forbidden expectation passes only when the response clearly does not show the behavior. When uncertain, fail it. Cite specific evidence quoted from the response for every judgment; for a failure, explain briefly why the evidence is insufficient or contradictory. Return exactly one result for each expectation id and no others.
+
+## Scenario
+{case['scenario']}
+
+## Environment
+{environment}
+
+## Response
+{decision['response']}
+
+## Expectations
+{numbered_expectations}"""
     decision_json = json.dumps(decision, ensure_ascii=False, indent=2)
     return f"""Grade the decision against the expectations below. Judge each expectation independently and use no partial credit. A required expectation passes only when the decision clearly shows the behavior. A forbidden expectation passes only when the decision clearly does not show the behavior. When uncertain, fail it. Cite specific evidence quoted from the decision JSON for every judgment; for a failure, explain briefly why the evidence is insufficient or contradictory. Return exactly one result for each expectation id and no others.
 
@@ -302,6 +392,15 @@ def validate_decision(payload):
         isinstance(item, str) for item in payload["next_actions"]
     ):
         raise ValueError("decision next_actions must be an array of strings")
+    return payload
+
+
+def validate_response(payload):
+    """Validate a decoded response-mode output."""
+    if not isinstance(payload, dict) or set(payload) != {"response"}:
+        raise ValueError("response output must contain exactly response")
+    if not isinstance(payload["response"], str) or not payload["response"].strip():
+        raise ValueError("response must be a non-empty string")
     return payload
 
 
@@ -453,13 +552,21 @@ def run_codex(prompt, schema, model, effort, cwd, timeout):
         raise BehaviorEvalError(f"could not start Codex: {error}") from error
 
 
-def _failed_run(run_number, error, decision=None, checks=None):
+def _output_fields(case, output):
+    """Return the decision and response fields recorded for a run."""
+    if evaluation_mode(case) == "response":
+        return {"decision": None, "response": output["response"] if output else None}
+    return {"decision": output, "response": None}
+
+
+def _failed_run(run_number, error, decision=None, checks=None, case=None):
     """Create a failed run record after a CLI or output error."""
     checks = checks or []
     violated = list(dict.fromkeys(check["invariant"] for check in checks if not check["passed"]))
+    fields = _output_fields(case, decision) if case is not None else {"decision": decision, "response": None}
     return {
         "run": run_number,
-        "decision": decision,
+        **fields,
         "checks": checks,
         "expectations": [],
         "pass": False,
@@ -495,23 +602,21 @@ def run_case_once(
                 copied_skill,
                 ignore=shutil.ignore_patterns("__pycache__"),
             )
-            decision_prompt = build_decision_prompt(
-                context, skill_text, skill_path.name, case
+            response_mode = evaluation_mode(case) == "response"
+            model_prompt = build_model_prompt(context, skill_text, skill_path.name, case)
+            payload = codex_runner(
+                model_prompt,
+                response_schema() if response_mode else decision_schema(),
+                model,
+                effort,
+                workspace,
+                timeout,
             )
-            decision = validate_decision(
-                codex_runner(
-                    decision_prompt,
-                    decision_schema(),
-                    model,
-                    effort,
-                    workspace,
-                    timeout,
-                )
-            )
+            decision = validate_response(payload) if response_mode else validate_decision(payload)
     except Exception as error:
-        return _failed_run(run_number, f"model call failed: {error}")
+        return _failed_run(run_number, f"model call failed: {error}", case=case)
 
-    checks = deterministic_checks(case, decision)
+    checks = [] if response_mode else deterministic_checks(case, decision)
     rubric = decision_expectations(case)
     try:
         with tempfile.TemporaryDirectory(prefix="behavior-eval-grader-workspace-") as temporary_directory:
@@ -544,6 +649,7 @@ def run_case_once(
             f"grader call failed: {error}",
             decision=decision,
             checks=checks,
+            case=case,
         )
 
     failed_items = [item for item in checks + graded_expectations if not item["passed"]]
@@ -551,7 +657,7 @@ def run_case_once(
     passed = not failed_items
     return {
         "run": run_number,
-        "decision": decision,
+        **_output_fields(case, decision),
         "checks": checks,
         "expectations": graded_expectations,
         "pass": passed,
@@ -722,8 +828,9 @@ def main(argv=None):
 
     skill_text = skill_file.read_text(encoding="utf-8")
     if args.dry_run:
-        prompt = build_decision_prompt(
-            suite["context"], skill_text, skill_path.name, selected_cases[0]
+        first_case = selected_cases[0]
+        prompt = build_model_prompt(
+            prompt_context(suite, first_case), skill_text, skill_path.name, first_case
         )
         _print_dry_run([case["id"] for case in selected_cases], prompt)
         return 0
@@ -741,7 +848,7 @@ def main(argv=None):
                 case,
                 suite["invariants"],
                 skill_path,
-                suite["context"],
+                prompt_context(suite, case),
                 args.model,
                 args.effort,
                 args.grader_model,
