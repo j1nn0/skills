@@ -68,6 +68,18 @@ class BehaviorEvalSuiteTest(unittest.TestCase):
         }
         self.assertTrue(critical.issubset(referenced), f"Unreferenced critical invariants: {critical - referenced}")
 
+    def test_parallel_convergence_checks_every_finding_before_completion(self):
+        parallel_text = (SKILL_PATH.parent / "references" / "parallel.md").read_text(encoding="utf-8")
+        check = next(
+            sentence
+            for sentence in parallel_text.split(". ")
+            if sentence.startswith("Before treating convergence as complete")
+        ).lower()
+
+        self.assertIn("every accepted finding", check)
+        self.assertIn("traceable", check)
+        self.assertIn("explorer evidence or investigation", check)
+
     def test_parallel_batch_summary_keeps_the_short_convergence_guidance(self):
         skill_text = SKILL_PATH.read_text(encoding="utf-8")
 
