@@ -86,7 +86,7 @@ Only read-only Explorer work admitted under [`parallel.md`](references/parallel.
 
 ### Parallel Explorer batches
 
-[`parallel.md`](references/parallel.md) is authoritative for admission, dispatch, collection, resume, and convergence. Use only two or three independent read-only Explorer units under one parent objective; a disabled or rejected batch falls back to sequential exploration. Give each unit a standalone prompt, validate each latest complete result independently, and do not share sibling raw outputs. Preserve failures as explicit gaps and synthesize once in the orchestrator, retaining contradictions rather than voting.
+[`parallel.md`](references/parallel.md) is authoritative for admission, dispatch, collection, resume, and convergence. Use only two or three independent read-only Explorer units under one parent objective; a disabled or rejected batch falls back to sequential exploration. Give each unit a standalone prompt, validate each latest complete result independently, and do not share sibling raw outputs. Preserve failures as explicit gaps and synthesize once in the orchestrator, separating observed evidence from Explorer interpretation and preserving provenance and contradictions rather than voting.
 
 Run the optional Explorer Gate at most once after synthesis (see [`explorer-gate.md`](references/explorer-gate.md)). Parallel investigation does not permit parallel Fixers, shared-tree writes, or skipping sequential implementation, diff review, verification, or the Completion Gate.
 
