@@ -71,8 +71,8 @@ Read [`STARTUP.md`](references/STARTUP.md) before the first delegation of every 
    unit to the explorer and evaluate its evidence and conclusions.
 4. Decide the implementation strategy and scope yourself.
 5. Before non-trivial implementation, size the work into bounded units using
-   "Unit sizing". Keep the overall plan yourself and select only the current
-   unit for delegation.
+   "Context routing and unit sizing". Keep the overall plan yourself and select
+   only the current unit for delegation.
 6. Delegate the current bounded implementation unit to the fixer.
 7. Review the actual diff and verification results yourself.
 8. Route follow-up work according to "Review and retry".
@@ -100,9 +100,10 @@ task. Follow-up prompts within the same unit may build on that agent's
 immediately preceding result, and must state the remaining question, defect, or
 objective.
 
-Use "Unit sizing" before sending a handoff when the work may require substantial
-code exploration, research, implementation, or verification. The orchestrator
-owns the overall task and plan; a delegated agent owns only its current unit.
+Use "Context routing and unit sizing" before sending a handoff when the work
+may require substantial code exploration, research, implementation, or
+verification. The orchestrator owns the overall task and plan; a delegated agent
+owns only its current unit.
 
 Delegated agents do their own work and report back. They never invoke
 `agent-orchestration`, delegate further, or run Herdr agent or pane control
@@ -111,7 +112,11 @@ commands.
 Require every delegated response to end with one concise `<HERDR_RESULT>` block,
 in the format given for that role.
 
-## Unit sizing
+## Context routing and unit sizing
+
+The orchestrator owns context routing. A new-unit handoff is a projection of
+settled task state for one working set, not a copy of the conversation or prior
+agent output.
 
 Size delegated work by the **expected working context**, not by prompt length,
 file count, or a fixed token threshold. Prompt size is only a weak proxy: a
@@ -119,9 +124,29 @@ short instruction can force an agent to load several subsystems and long test
 outputs, while a longer instruction can still describe one tightly bounded
 change.
 
-The goal is to keep each delegated agent focused on one coherent working set and
-to avoid making it retain detailed instructions for work that it is not yet
-performing.
+### Context contract
+
+Pass **settled state, not reasoning history**. A new-unit handoff includes only
+what can affect the current unit:
+
+- the role boundary;
+- the current unit's objective or question, plus the overall objective only
+  when it explains why the unit exists;
+- the current unit's scope, referring to relevant paths, systems, APIs, or
+  interfaces rather than preloading code;
+- current constraints and the cross-unit invariants that constrain this unit;
+- the settled strategy, when delegating implementation;
+- relevant validated evidence, converted from investigation history;
+- the current unit's completion criteria or required conclusion.
+
+Leave out conversation transcripts, raw tool or agent output, repeated findings,
+already-resolved discussion, sibling raw results, and detailed instructions for
+later units. Omit rejected alternatives unless the current unit must avoid a
+specific tempting but unsafe path.
+
+A long handoff does not automatically mean the unit is too large; apply this
+contract first. If the handoff is still broad because the agent would need
+several independent working sets, split it.
 
 ### A well-sized unit
 
@@ -174,24 +199,6 @@ intermediate state that cannot be meaningfully verified, would require the same
 context to be rediscovered immediately, or would separate changes that must be
 reasoned about atomically for correctness, keep them in one unit.
 
-### Reduce context before splitting
-
-A long handoff does not automatically mean the unit is too large. First remove
-context that the delegated agent does not need:
-
-- convert investigation history into validated evidence;
-- convert deliberation into the chosen decision or strategy;
-- omit rejected alternatives unless the current unit must avoid a specific
-  tempting but unsafe path;
-- omit transcripts, repeated findings, and already-resolved discussion;
-- include only constraints and cross-unit invariants that can affect the current
-  unit;
-- refer to relevant paths and interfaces instead of preloading unrelated code or
-  later-unit detail.
-
-Pass **settled state, not reasoning history**. If the handoff is still broad
-because the current agent would need several independent working sets, split it.
-
 ### Progressive handoff
 
 For a larger task, the orchestrator may maintain an ordered internal plan such
@@ -204,17 +211,8 @@ Overall objective
   Unit 3 -> independently reviewable result
 ```
 
-Do not preload the delegated agent with the detailed instructions for every
-unit. Send only what is needed for the current unit:
-
-- the overall objective only when it helps explain why the current unit exists;
-- cross-unit invariants that constrain the current unit;
-- the current unit's objective or question;
-- the current unit's scope;
-- the settled strategy, when delegating implementation;
-- relevant validated evidence;
-- current constraints;
-- the current unit's completion criteria or required conclusion.
+Build each unit's handoff under "Context contract" rather than preloading every
+unit's detailed instructions.
 
 After the unit completes, review its result yourself. Use only the validated
 result as input when constructing the next unit. A completed unit may confirm,
@@ -239,7 +237,8 @@ Use the explorer when:
 
 A large investigation is not automatically one explorer unit. If it contains
 independent questions across unrelated code paths, systems, or specifications,
-use "Unit sizing" and investigate them in ordered focused units.
+use "Context routing and unit sizing" and investigate them in ordered focused
+units.
 
 A large implementation whose strategy is already settled goes straight to the
 fixer.
@@ -335,8 +334,9 @@ when:
 - multiple files or components must change;
 - independent implementation reduces implementation or review risk.
 
-Before delegating a large settled implementation, apply "Unit sizing". A settled
-strategy does not mean the entire implementation must be one fixer unit.
+Before delegating a large settled implementation, apply "Context routing and
+unit sizing". A settled strategy does not mean the entire implementation must be
+one fixer unit.
 
 Send unresolved questions to the explorer first.
 
@@ -353,9 +353,7 @@ Give the fixer:
 - completion criteria;
 - relevant validated evidence.
 
-For a multi-unit implementation, include only cross-unit invariants and overall
-context that can affect the current unit. Do not preload detailed instructions
-for later units.
+For a multi-unit implementation, apply "Context contract".
 
 Let the fixer make local implementation decisions inside those boundaries.
 

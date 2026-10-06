@@ -51,7 +51,7 @@ skills/agent-orchestration/scripts/sessionctl set-role --role explorer --harness
 
 | File | Contents |
 | --- | --- |
-| `SKILL.md` | Roles, workflow, routing, unit sizing, per-role boundaries and handoff formats, delegation mechanics, review and retry. |
+| `SKILL.md` | Roles, workflow, routing, context routing and unit sizing, per-role boundaries and handoff formats, delegation mechanics, review and retry. |
 | `README.md` | Skill overview and file layout. |
 | `references/STARTUP.md` | Persisted session state, pane layout, agent resolution and reuse rules, and per-role harness/model/effort configuration and start commands. |
 | `references/RECOVERY.md` | Submission failures, timeout, `blocked`, and stuck-agent handling. |
