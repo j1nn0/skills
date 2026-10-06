@@ -82,11 +82,13 @@ Read [`startup.md`](references/startup.md) before the first delegation of every 
 
 ## Concurrency
 
+Before any Parallel Explorer operation—admission, dispatch, collection, resume, or convergence—read [`parallel.md`](references/parallel.md) and follow it as authoritative.
+
 Only read-only Explorer work admitted under [`parallel.md`](references/parallel.md) may run in parallel to reduce investigation latency across independent units on the same repository state; serialize all writes, Fixer work, and Explorer–Fixer overlap through the orchestrator, and when in doubt serialize work there.
 
 ### Parallel Explorer batches
 
-Read [`parallel.md`](references/parallel.md) before handling Parallel Explorer admission, dispatch, collection, resume, or convergence; it is authoritative for those operations. Use only two or three independent read-only Explorer units under one parent objective; a disabled or rejected batch falls back to sequential exploration. Give each unit a standalone prompt, validate each latest complete result independently, and do not share sibling raw outputs. Preserve failures as explicit gaps and synthesize once in the orchestrator, separating observed evidence from Explorer interpretation and preserving provenance and contradictions rather than voting.
+Use only two or three independent read-only Explorer units under one parent objective; a disabled or rejected batch falls back to sequential exploration. Give each unit a standalone prompt, validate each latest complete result independently, and do not share sibling raw outputs. Preserve failures as explicit gaps and synthesize once in the orchestrator, separating observed evidence from Explorer interpretation and preserving provenance and contradictions rather than voting.
 
 Run the optional Explorer Gate at most once after synthesis (see [`explorer-gate.md`](references/explorer-gate.md)). Parallel investigation does not permit parallel Fixers, shared-tree writes, or skipping sequential implementation, diff review, verification, or the Completion Gate.
 
