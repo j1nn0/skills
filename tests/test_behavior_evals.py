@@ -30,6 +30,7 @@ EXPECTED_CASE_IDS = [
     "15-stale-result",
     "16-parallel-convergence",
     "17-parallel-convergence-output",
+    "18-parallel-convergence-output-with-reference",
 ]
 
 
@@ -336,6 +337,28 @@ class BehaviorEvalSuiteTest(unittest.TestCase):
         self.assertIn("no_sibling_output_sharing", forbidden_by_invariant)
         self.assertTrue(invariants["no_sibling_output_sharing"]["critical"])
         self.assertTrue(any("settled" in text for text in forbidden_by_invariant.values()))
+
+    def test_reference_diagnostic_case_differs_from_control_only_by_required_reference(self):
+        control = self.case("17-parallel-convergence-output")
+        diagnostic = self.case("18-parallel-convergence-output-with-reference")
+        shared_keys = ("evaluation_mode", "scenario", "environment", "required", "forbidden")
+        parallel_text = (SKILL_PATH.parent / "references" / "parallel.md").read_text(encoding="utf-8")
+
+        for key in shared_keys:
+            with self.subTest(key=key):
+                self.assertEqual(control[key], diagnostic[key])
+        self.assertEqual(set(control) | {"required_references"}, set(diagnostic))
+        self.assertNotIn("required_references", control)
+        self.assertEqual(["references/parallel.md"], diagnostic["required_references"])
+        for sentence in ("Before completing convergence", "topic names alone are not enough"):
+            self.assertIn(sentence, parallel_text)
+            self.assertNotIn(sentence, diagnostic["scenario"])
+            self.assertNotIn(sentence, " ".join(diagnostic["environment"]))
+        self.assertEqual([], run_behavior_eval.missing_required_references(SKILL_PATH.parent, [diagnostic]))
+
+    def test_only_the_reference_diagnostic_case_requires_a_reference(self):
+        requiring = [case["id"] for case in self.suite["cases"] if "required_references" in case]
+        self.assertEqual(["18-parallel-convergence-output-with-reference"], requiring)
 
     def test_orchestrator_convergence_is_still_evaluated(self):
         referenced = {

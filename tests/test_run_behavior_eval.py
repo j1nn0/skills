@@ -263,7 +263,7 @@ class RunBehaviorEvalTest(unittest.TestCase):
         case = suite["cases"][0]
         skill_path = Path(__file__).parents[1] / "skills" / "agent-orchestration"
 
-        def fake_codex(prompt, schema, model, effort, cwd, timeout):
+        def fake_codex(prompt, schema, model, effort, cwd, timeout, trace=None):
             if "required" not in schema["properties"]:
                 return decision()
             return {
@@ -395,7 +395,7 @@ class RunBehaviorEvalTest(unittest.TestCase):
         skill_path = Path(__file__).parents[1] / "skills" / "agent-orchestration"
         calls = []
 
-        def fake_codex(prompt, schema, model, effort, cwd, timeout):
+        def fake_codex(prompt, schema, model, effort, cwd, timeout, trace=None):
             calls.append((prompt, schema, Path(cwd), model, effort, timeout))
             if len(calls) == 1:
                 copied_skill = Path(cwd) / "skills" / skill_path.name
@@ -499,7 +499,7 @@ class RunBehaviorEvalTest(unittest.TestCase):
         skill_path = Path(__file__).parents[1] / "skills" / "agent-orchestration"
         calls = []
 
-        def fake_codex(prompt, schema, model, effort, cwd, timeout):
+        def fake_codex(prompt, schema, model, effort, cwd, timeout, trace=None):
             calls.append((prompt, schema))
             if len(calls) == 1:
                 return {"response": "The documentation shows X; the code shows Y."}
@@ -528,6 +528,73 @@ class RunBehaviorEvalTest(unittest.TestCase):
         self.assertEqual(run_behavior_eval.response_schema(), calls[0][1])
         self.assertIn("## Response\nThe documentation shows X; the code shows Y.", calls[1][0])
         self.assertNotIn("Decision JSON", calls[1][0])
+
+    def test_required_references_add_a_read_instruction_only_when_present(self):
+        case = response_case_fixture()
+        without = run_behavior_eval.build_model_prompt("Context.", "Skill text.", "demo", case)
+        case["required_references"] = ["references/guide.md"]
+        with_reference = run_behavior_eval.build_model_prompt("Context.", "Skill text.", "demo", case)
+
+        instruction = run_behavior_eval._required_reference_instruction("demo", case)
+
+        self.assertNotIn("open and read", without)
+        self.assertIn("open and read `skills/demo/references/guide.md`", with_reference)
+        self.assertIn("shell command", instruction)
+        self.assertEqual(without, with_reference.replace(instruction, ""))
+
+    def test_required_references_are_validated_and_resolved_under_the_skill(self):
+        suite = synthetic_suite()
+        bad = response_case_fixture()
+        bad["required_references"] = ["../outside.md"]
+        suite["cases"].append(bad)
+        self.assertTrue(any("relative paths inside the skill" in error for error in run_behavior_eval.validate_suite(suite)))
+
+        skill_path = Path(__file__).parents[1] / "skills" / "agent-orchestration"
+        present = {"id": "present", "required_references": ["references/parallel.md"]}
+        absent = {"id": "absent", "required_references": ["references/missing.md"]}
+        self.assertEqual(
+            ["absent: references/missing.md"],
+            run_behavior_eval.missing_required_references(skill_path, [present, absent]),
+        )
+
+    def test_executed_commands_and_reference_reads_are_parsed_from_codex_events(self):
+        events = [
+            json.dumps({"type": "item.started", "item": {"type": "command_execution", "command": "cat a.md"}}),
+            json.dumps({"type": "item.completed", "item": {"type": "command_execution", "command": "cat skills/x/references/parallel.md"}}),
+            json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "done"}}),
+            "not json",
+        ]
+        commands = run_behavior_eval.executed_commands(events)
+
+        self.assertEqual(["cat skills/x/references/parallel.md"], commands)
+        self.assertEqual(
+            {"references/parallel.md": True, "references/other.md": False},
+            run_behavior_eval.references_read(
+                {"required_references": ["references/parallel.md", "references/other.md"]}, commands
+            ),
+        )
+        self.assertEqual({}, run_behavior_eval.references_read({}, commands))
+
+    def test_run_case_once_records_model_commands_without_changing_grading(self):
+        suite = synthetic_suite()
+        case = response_case_fixture()
+        case["required_references"] = ["references/parallel.md"]
+        skill_path = Path(__file__).parents[1] / "skills" / "agent-orchestration"
+
+        def fake_codex(prompt, schema, model, effort, cwd, timeout, trace=None):
+            if "response" in schema["properties"]:
+                trace.append("cat skills/agent-orchestration/references/parallel.md")
+                return {"response": "Synthesis."}
+            return {"required": [{"id": "required-1", "satisfied": True, "evidence": "q"}], "forbidden": []}
+
+        result = run_behavior_eval.run_case_once(
+            case, suite["invariants"], skill_path, suite["context"], "m", "low", "g", "low", 15,
+            codex_runner=fake_codex,
+        )
+
+        self.assertTrue(result["pass"])
+        self.assertEqual(["cat skills/agent-orchestration/references/parallel.md"], result["commands"])
+        self.assertEqual({"references/parallel.md": True}, result["references_read"])
 
     def test_codex_environment_preserves_configured_codex_home(self):
         base_environment = {

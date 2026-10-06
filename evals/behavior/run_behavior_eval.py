@@ -124,6 +124,8 @@ def validate_suite(suite):
             else:
                 errors.extend(_decision_case_errors(case, case_label, known_invariants))
 
+            errors.extend(_required_reference_errors(case, case_label))
+
             expectation_count = 0
             for collection_name in ("required", "forbidden"):
                 entries = case.get(collection_name)
@@ -144,6 +146,31 @@ def validate_suite(suite):
             if expectation_count == 0:
                 errors.append(f"{case_label} must define at least one required or forbidden expectation")
     return errors
+
+
+def _required_reference_errors(case, case_label):
+    """Return validation errors for optional skill-relative reference paths the model must read."""
+    if "required_references" not in case:
+        return []
+    references = case["required_references"]
+    if not isinstance(references, list) or not references:
+        return [f"{case_label} required_references must be a non-empty list"]
+    errors = []
+    for reference in references:
+        path = Path(reference) if isinstance(reference, str) else None
+        if path is None or not reference.strip() or path.is_absolute() or ".." in path.parts:
+            errors.append(f"{case_label} required_references must contain relative paths inside the skill")
+    return errors
+
+
+def missing_required_references(skill_path, cases):
+    """Return required reference paths that do not exist under the skill directory."""
+    return [
+        f"{case['id']}: {reference}"
+        for case in cases
+        for reference in case.get("required_references", [])
+        if not (Path(skill_path) / reference).is_file()
+    ]
 
 
 def _decision_case_errors(case, case_label, known_invariants):
@@ -235,6 +262,18 @@ def response_schema():
     }
 
 
+def _required_reference_instruction(skill_directory_name, case):
+    """Return the instruction to read case-required reference files, or an empty string."""
+    references = case.get("required_references")
+    if not references:
+        return ""
+    paths = ", ".join(f"`skills/{skill_directory_name}/{reference}`" for reference in references)
+    return (
+        f" Before writing your answer, open and read {paths} with a shell command such as `cat`, "
+        "then follow its guidance."
+    )
+
+
 def _scenario_prompt(context, skill_text, skill_directory_name, case, purpose):
     """Build the shared prompt sections up to the scenario, without rubric expectations."""
     environment = "\n".join(f"- {assumption}" for assumption in case["environment"])
@@ -249,7 +288,7 @@ The full skill instructions follow. Use them to {purpose}.
 {skill_text}
 --- END SKILL.md ---
 
-The skill's reference files, if needed, are readable under `skills/{skill_directory_name}/references/`.
+The skill's reference files, if needed, are readable under `skills/{skill_directory_name}/references/`.{_required_reference_instruction(skill_directory_name, case)}
 
 ## Environment
 {environment}
@@ -523,8 +562,34 @@ def codex_environment(base_env, home):
     return environment
 
 
-def run_codex(prompt, schema, model, effort, cwd, timeout):
-    """Run one Codex structured-output call and return its decoded JSON."""
+def executed_commands(event_lines):
+    """Return the shell commands Codex executed, parsed from its JSONL event stream."""
+    commands = []
+    for line in event_lines:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        item = event.get("item") if isinstance(event, dict) else None
+        if event.get("type") == "item.completed" and isinstance(item, dict):
+            if item.get("type") == "command_execution" and isinstance(item.get("command"), str):
+                commands.append(item["command"])
+    return commands
+
+
+def references_read(case, commands):
+    """Return, for each required reference, whether an executed command named its file."""
+    return {
+        reference: any(Path(reference).name in command for command in commands)
+        for reference in case.get("required_references", [])
+    }
+
+
+def run_codex(prompt, schema, model, effort, cwd, timeout, trace=None):
+    """Run one Codex structured-output call and return its decoded JSON.
+
+    When trace is a list, the shell commands Codex executed are appended to it.
+    """
     try:
         with tempfile.TemporaryDirectory(prefix="behavior-eval-codex-") as temporary_directory:
             temporary_path = Path(temporary_directory)
@@ -535,6 +600,7 @@ def run_codex(prompt, schema, model, effort, cwd, timeout):
             command = [
                 "codex",
                 "exec",
+                "--json",
                 "--ephemeral",
                 "--sandbox",
                 "read-only",
@@ -561,6 +627,8 @@ def run_codex(prompt, schema, model, effort, cwd, timeout):
             if result.returncode != 0:
                 error = result.stderr.strip() or result.stdout.strip()
                 raise BehaviorEvalError(f"Codex exited with status {result.returncode}: {error}")
+            if trace is not None:
+                trace.extend(executed_commands(result.stdout.splitlines()))
             try:
                 return json.loads(output_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as error:
@@ -594,6 +662,11 @@ def _failed_run(run_number, error, decision=None, checks=None, case=None):
     }
 
 
+def _trace_fields(case, commands):
+    """Return diagnostic fields describing what the model under test executed."""
+    return {"commands": list(commands), "references_read": references_read(case, commands)}
+
+
 def run_case_once(
     case,
     invariants,
@@ -610,6 +683,7 @@ def run_case_once(
     """Run the isolated model and grader calls for one case execution."""
     codex_runner = codex_runner or run_codex
     skill_path = Path(skill_path)
+    commands = []
     try:
         skill_text = (skill_path / "SKILL.md").read_text(encoding="utf-8")
         with tempfile.TemporaryDirectory(prefix="behavior-eval-workspace-") as temporary_directory:
@@ -630,10 +704,11 @@ def run_case_once(
                 effort,
                 workspace,
                 timeout,
+                trace=commands,
             )
             decision = validate_response(payload) if response_mode else validate_decision(payload)
     except Exception as error:
-        return _failed_run(run_number, f"model call failed: {error}", case=case)
+        return {**_failed_run(run_number, f"model call failed: {error}", case=case), **_trace_fields(case, commands)}
 
     checks = [] if response_mode else deterministic_checks(case, decision)
     rubric = decision_expectations(case)
@@ -664,13 +739,16 @@ def run_case_once(
                 }
             )
     except Exception as error:
-        return _failed_run(
-            run_number,
-            f"grader call failed: {error}",
-            decision=decision,
-            checks=checks,
-            case=case,
-        )
+        return {
+            **_failed_run(
+                run_number,
+                f"grader call failed: {error}",
+                decision=decision,
+                checks=checks,
+                case=case,
+            ),
+            **_trace_fields(case, commands),
+        }
 
     failed_items = [item for item in checks + graded_expectations if not item["passed"]]
     violated_invariants = list(dict.fromkeys(item["invariant"] for item in failed_items))
@@ -683,6 +761,7 @@ def run_case_once(
         "pass": passed,
         "violated_invariants": violated_invariants,
         "error": None,
+        **_trace_fields(case, commands),
     }
 
 
@@ -844,6 +923,11 @@ def main(argv=None):
     skill_file = skill_path / "SKILL.md"
     if not skill_path.is_dir() or not skill_file.is_file():
         print(f"Error: skill path must contain SKILL.md: {skill_path}", file=sys.stderr)
+        return 2
+
+    missing = missing_required_references(skill_path, selected_cases)
+    if missing:
+        print(f"Error: required reference not found under the skill: {', '.join(missing)}", file=sys.stderr)
         return 2
 
     skill_text = skill_file.read_text(encoding="utf-8")

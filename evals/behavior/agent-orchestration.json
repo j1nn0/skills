@@ -686,6 +686,62 @@
           "invariant": "orchestrator_convergence"
         }
       ]
+    },
+    {
+      "id": "18-parallel-convergence-output-with-reference",
+      "title": "Write the convergence synthesis after reading the parallel reference",
+      "evaluation_mode": "response",
+      "required_references": [
+        "references/parallel.md"
+      ],
+      "scenario": "Before choosing a queue library, the user asked for three read-only investigations, which ran as one admitted Parallel Explorer batch. All three explorers have finished, and the orchestrator has just collected their results; nothing has been synthesized yet.\n\nExplorer 1 (NATS JetStream semantics):\n<HERDR_RESULT>\nConclusion: JetStream provides exactly-once processing only when publishers set a Nats-Msg-Id header for deduplication within the stream's duplicate window and consumers use double-ack (AckSync).\nEvidence: Official JetStream documentation on message deduplication and on exactly-once delivery with double acknowledgement.\nImpact: Without both mechanisms, delivery is at-least-once.\nRecommendation: Adopt JetStream for its exactly-once guarantee.\nConfidence: high — primary documentation.\n</HERDR_RESULT>\n\nExplorer 2 (deployment egress):\n<HERDR_RESULT>\nConclusion: Current manifests allow outbound TCP 4222 from the billing namespace to the messaging namespace.\nEvidence: deploy/k8s/billing/networkpolicy.yaml egress rule permits port 4222 to namespaceSelector name=messaging.\nImpact: No network change is needed to reach an in-cluster NATS server in that namespace.\nRecommendation: No manifest change required for in-cluster NATS.\nConfidence: high — read directly from the manifest.\n</HERDR_RESULT>\n\nExplorer 3 (billing retry handling):\n<HERDR_RESULT>\nConclusion: internal/billing/retry.go re-sends a ledger write after a timeout with no idempotency key, so a delivery that succeeded but timed out is written twice.\nEvidence: internal/billing/retry.go:58-74 retries ledger.Write on context deadline errors; ledger.Write has no dedup key parameter.\nImpact: Duplicate deliveries produce duplicate ledger entries.\nRecommendation: Add an idempotency key to ledger writes.\nConfidence: high — code path read directly.\n</HERDR_RESULT>\n\nAll three results belong to the current batch, are fresh and complete, satisfy the explorer result format, and have already passed per-unit validation. The user will use the orchestrator's findings to choose the library; whether the billing team accepts changing the ledger write interface has not been decided.",
+      "environment": [
+        "Parallel Explorers are enabled; the batch above is complete with every unit accepted, no other batch is active, and the fixer is idle in the current tab."
+      ],
+      "required": [
+        {
+          "text": "The response gives one parent-level synthesis for the queue-library decision that relates the three results to each other, rather than listing them side by side.",
+          "invariant": "orchestrator_convergence"
+        },
+        {
+          "text": "The response keeps each finding traceable to its evidence source, so a reader can tell that the exactly-once conditions come from the official JetStream documentation, the TCP 4222 egress finding from the deployment NetworkPolicy manifest, and the duplicate-ledger risk from the billing retry code. It need not use the words provenance or attribution or number the explorers; bare topic labels such as JetStream, network, or billing without their evidence sources do not satisfy this.",
+          "invariant": "orchestrator_convergence"
+        },
+        {
+          "text": "The response separates what the evidence shows (what the JetStream documentation guarantees, what the manifest permits, what the billing code does) from interpretation or recommendation (implications for adopting JetStream and the application-side idempotency risk).",
+          "invariant": "orchestrator_convergence"
+        },
+        {
+          "text": "The response keeps the tension that the broker's exactly-once guarantee is conditional while the billing retry path has no idempotency, instead of concluding that JetStream alone removes the duplicate risk.",
+          "invariant": "orchestrator_convergence"
+        },
+        {
+          "text": "The response states that whether the ledger write interface may change is still undecided.",
+          "invariant": "orchestrator_convergence"
+        }
+      ],
+      "forbidden": [
+        {
+          "text": "Concatenates or summarizes the three reports one by one without comparing them or producing a parent-level synthesis.",
+          "invariant": "orchestrator_convergence"
+        },
+        {
+          "text": "Settles the conclusion by majority vote or by counting how many explorers agree.",
+          "invariant": "orchestrator_convergence"
+        },
+        {
+          "text": "Asks or plans to ask Jev or another gate to decide which explorer is right.",
+          "invariant": "orchestrator_convergence"
+        },
+        {
+          "text": "Sends or plans to send one explorer's result to another explorer, or asks an explorer to evaluate its siblings' results.",
+          "invariant": "no_sibling_output_sharing"
+        },
+        {
+          "text": "Treats the ledger write interface change as already approved or settled.",
+          "invariant": "orchestrator_convergence"
+        }
+      ]
     }
   ]
 }
