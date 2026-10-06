@@ -244,19 +244,89 @@ class RunBehaviorEvalTest(unittest.TestCase):
 
     def test_grader_output_validation_rejects_missing_and_extra_ids(self):
         expectations = run_behavior_eval.decision_expectations(synthetic_suite()["cases"][0])
-        missing = {"expectations": [{"id": "required-1", "passed": True, "evidence": "quoted"}]}
+        missing = {"required": [{"id": "required-1", "satisfied": True, "evidence": "quoted"}], "forbidden": []}
         extra = {
-            "expectations": [
-                {"id": "required-1", "passed": True, "evidence": "quoted"},
-                {"id": "forbidden-1", "passed": True, "evidence": "quoted"},
-                {"id": "unexpected-1", "passed": False, "evidence": "none"},
-            ]
+            "required": [{"id": "required-1", "satisfied": True, "evidence": "quoted"}],
+            "forbidden": [
+                {"id": "forbidden-1", "violated": False, "evidence": "quoted"},
+                {"id": "forbidden-2", "violated": False, "evidence": "none"},
+            ],
         }
 
         with self.assertRaisesRegex(ValueError, "ids mismatch"):
             run_behavior_eval.validate_grader_output(missing, expectations)
         with self.assertRaisesRegex(ValueError, "ids mismatch"):
             run_behavior_eval.validate_grader_output(extra, expectations)
+
+    def grade_synthetic(self, satisfied, violated):
+        suite = synthetic_suite()
+        case = suite["cases"][0]
+        skill_path = Path(__file__).parents[1] / "skills" / "agent-orchestration"
+
+        def fake_codex(prompt, schema, model, effort, cwd, timeout):
+            if "required" not in schema["properties"]:
+                return decision()
+            return {
+                "required": [{"id": "required-1", "satisfied": satisfied, "evidence": "quoted"}],
+                "forbidden": [{"id": "forbidden-1", "violated": violated, "evidence": "quoted"}],
+            }
+
+        run = run_behavior_eval.run_case_once(
+            case, suite["invariants"], skill_path, suite["context"], "m", "low", "g", "low", 15,
+            codex_runner=fake_codex,
+        )
+        case_result = run_behavior_eval.build_case_result(case, [run])
+        return run, run_behavior_eval.summarize_results([case_result], suite["invariants"])
+
+    def test_required_polarity_maps_satisfied_to_final_pass(self):
+        run, _ = self.grade_synthetic(satisfied=True, violated=False)
+        self.assertTrue(run["expectations"][0]["passed"])
+        self.assertEqual({"satisfied": True}, run["expectations"][0]["judgment"])
+
+        run, _ = self.grade_synthetic(satisfied=False, violated=False)
+        self.assertFalse(run["expectations"][0]["passed"])
+
+    def test_forbidden_polarity_maps_absent_behavior_to_final_pass(self):
+        run, summary = self.grade_synthetic(satisfied=True, violated=False)
+        forbidden = run["expectations"][1]
+        self.assertTrue(forbidden["passed"])
+        self.assertEqual({"violated": False}, forbidden["judgment"])
+        self.assertTrue(run["pass"])
+        self.assertEqual({}, summary["critical_violations"])
+
+        run, summary = self.grade_synthetic(satisfied=True, violated=True)
+        self.assertFalse(run["expectations"][1]["passed"])
+        self.assertFalse(run["pass"])
+        self.assertEqual({"marker_rule": 1}, summary["critical_violations"])
+
+    def test_grader_schema_and_prompt_separate_required_and_forbidden_polarity(self):
+        case = synthetic_suite()["cases"][0]
+        expectations = run_behavior_eval.decision_expectations(case)
+        schema = run_behavior_eval.grader_schema(expectations)
+        prompt = run_behavior_eval.build_grader_prompt(case, decision())
+
+        self.assertEqual(["required", "forbidden"], schema["required"])
+        self.assertFalse(schema["additionalProperties"])
+        required_item = schema["properties"]["required"]["items"]
+        forbidden_item = schema["properties"]["forbidden"]["items"]
+        self.assertIn("satisfied", required_item["required"])
+        self.assertNotIn("passed", required_item["properties"])
+        self.assertIn("violated", forbidden_item["required"])
+        self.assertNotIn("passed", forbidden_item["properties"])
+        self.assertFalse(forbidden_item["additionalProperties"])
+        self.assertEqual(["forbidden-1"], forbidden_item["properties"]["id"]["enum"])
+        self.assertIn("forbidden behavior absent => violated = false", prompt)
+        self.assertIn("## Forbidden expectations\nforbidden-1:", prompt)
+
+    def test_grader_output_rejects_the_old_shared_passed_field(self):
+        expectations = run_behavior_eval.decision_expectations(synthetic_suite()["cases"][0])
+        old_shape = {
+            "required": [{"id": "required-1", "passed": True, "evidence": "quoted"}],
+            "forbidden": [{"id": "forbidden-1", "passed": True, "evidence": "quoted"}],
+        }
+
+        with self.assertRaisesRegex(ValueError, "exactly id, satisfied, and evidence"):
+            run_behavior_eval.validate_grader_output(old_shape, expectations)
 
     def test_case_and_summary_aggregation_includes_errors_and_critical_violations(self):
         case = synthetic_suite()["cases"][0]
@@ -333,10 +403,8 @@ class RunBehaviorEvalTest(unittest.TestCase):
                 self.assertFalse((copied_skill / "__pycache__").exists())
                 return decision()
             return {
-                "expectations": [
-                    {"id": "required-1", "passed": True, "evidence": "A quoted rationale."},
-                    {"id": "forbidden-1", "passed": True, "evidence": "Not present."},
-                ]
+                "required": [{"id": "required-1", "satisfied": True, "evidence": "A quoted rationale."}],
+                "forbidden": [{"id": "forbidden-1", "violated": False, "evidence": "Not present."}],
             }
 
         result = run_behavior_eval.run_case_once(
@@ -435,7 +503,10 @@ class RunBehaviorEvalTest(unittest.TestCase):
             calls.append((prompt, schema))
             if len(calls) == 1:
                 return {"response": "The documentation shows X; the code shows Y."}
-            return {"expectations": [{"id": "required-1", "passed": True, "evidence": "X and Y."}]}
+            return {
+                "required": [{"id": "required-1", "satisfied": True, "evidence": "X and Y."}],
+                "forbidden": [],
+            }
 
         result = run_behavior_eval.run_case_once(
             case,

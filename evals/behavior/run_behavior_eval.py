@@ -307,32 +307,54 @@ def decision_expectations(case):
     return expectations
 
 
+GRADER_JUDGMENTS = {"required": "satisfied", "forbidden": "violated"}
+
+
 def grader_schema(expectations):
-    """Return a strict grader response schema with one item per expectation."""
-    expectation_ids = [expectation["id"] for expectation in expectations]
+    """Return a strict grader schema with polarity-specific fields for each expectation kind."""
+    properties = {}
+    for kind, judgment in GRADER_JUDGMENTS.items():
+        expectation_ids = [item["id"] for item in expectations if item["kind"] == kind]
+        id_schema = {"type": "string"}
+        if expectation_ids:
+            id_schema["enum"] = expectation_ids
+        properties[kind] = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": id_schema,
+                    judgment: {"type": "boolean"},
+                    "evidence": {"type": "string"},
+                },
+                "required": ["id", judgment, "evidence"],
+                "additionalProperties": False,
+            },
+            "minItems": len(expectation_ids),
+            "maxItems": len(expectation_ids),
+        }
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
-        "properties": {
-            "expectations": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "id": {"type": "string", "enum": expectation_ids},
-                        "passed": {"type": "boolean"},
-                        "evidence": {"type": "string"},
-                    },
-                    "required": ["id", "passed", "evidence"],
-                    "additionalProperties": False,
-                },
-                "minItems": len(expectation_ids),
-                "maxItems": len(expectation_ids),
-            }
-        },
-        "required": ["expectations"],
+        "properties": properties,
+        "required": list(GRADER_JUDGMENTS),
         "additionalProperties": False,
     }
+
+
+def _grader_instructions(subject):
+    """Return grading instructions with explicit required and forbidden polarity."""
+    return (
+        f"Grade the {subject} against the expectations below. Judge each expectation independently and use no "
+        "partial credit. Report required expectations in `required`: set `satisfied` to true only when the "
+        f"{subject} clearly shows the behavior, and to false when it is missing or uncertain. Report forbidden "
+        "expectations in `forbidden`: set `violated` to true when the "
+        f"{subject} shows the prohibited behavior or when you are uncertain, and to false only when it clearly "
+        "does not show it. Do not invert the meaning: forbidden behavior absent => violated = false; forbidden "
+        f"behavior present => violated = true. Cite specific evidence quoted from the {subject} for every "
+        "judgment; for a failed required expectation or a violation, explain briefly why. Return exactly one "
+        "result for each expectation id and no others."
+    )
 
 
 def build_grader_prompt(case, decision):
@@ -341,11 +363,17 @@ def build_grader_prompt(case, decision):
     if not environment:
         environment = "- None specified."
     expectations = decision_expectations(case)
-    numbered_expectations = "\n".join(
-        f"{item['id']}: {item['text']}" for item in expectations
-    )
+    sections = []
+    for kind, heading in (("required", "Required expectations"), ("forbidden", "Forbidden expectations")):
+        lines = [f"{item['id']}: {item['text']}" for item in expectations if item["kind"] == kind]
+        sections.append(f"## {heading}\n" + ("\n".join(lines) if lines else "None."))
+    rubric = "\n\n".join(sections)
     if evaluation_mode(case) == "response":
-        return f"""Grade the response against the expectations below. Judge each expectation independently and use no partial credit. A required expectation passes only when the response clearly shows the behavior. A forbidden expectation passes only when the response clearly does not show the behavior. When uncertain, fail it. Cite specific evidence quoted from the response for every judgment; for a failure, explain briefly why the evidence is insufficient or contradictory. Return exactly one result for each expectation id and no others.
+        subject, output_heading, output = "response", "Response", decision["response"]
+    else:
+        subject, output_heading = "decision", "Decision JSON"
+        output = json.dumps(decision, ensure_ascii=False, indent=2)
+    return f"""{_grader_instructions(subject)}
 
 ## Scenario
 {case['scenario']}
@@ -353,25 +381,10 @@ def build_grader_prompt(case, decision):
 ## Environment
 {environment}
 
-## Response
-{decision['response']}
+## {output_heading}
+{output}
 
-## Expectations
-{numbered_expectations}"""
-    decision_json = json.dumps(decision, ensure_ascii=False, indent=2)
-    return f"""Grade the decision against the expectations below. Judge each expectation independently and use no partial credit. A required expectation passes only when the decision clearly shows the behavior. A forbidden expectation passes only when the decision clearly does not show the behavior. When uncertain, fail it. Cite specific evidence quoted from the decision JSON for every judgment; for a failure, explain briefly why the evidence is insufficient or contradictory. Return exactly one result for each expectation id and no others.
-
-## Scenario
-{case['scenario']}
-
-## Environment
-{environment}
-
-## Decision JSON
-{decision_json}
-
-## Expectations
-{numbered_expectations}"""
+{rubric}"""
 
 
 def validate_decision(payload):
@@ -405,34 +418,40 @@ def validate_response(payload):
 
 
 def validate_grader_output(payload, expectations):
-    """Validate grader output and return grades keyed by expectation id."""
-    if not isinstance(payload, dict) or set(payload) != {"expectations"}:
-        raise ValueError("grader output must contain exactly expectations")
-    entries = payload["expectations"]
-    if not isinstance(entries, list):
-        raise ValueError("grader expectations must be an array")
-    expected_ids = [expectation["id"] for expectation in expectations]
-    actual_ids = []
+    """Validate grader output and return grades normalized to final pass/fail by expectation id."""
+    if not isinstance(payload, dict) or set(payload) != set(GRADER_JUDGMENTS):
+        raise ValueError("grader output must contain exactly required and forbidden")
     grades = {}
-    for entry in entries:
-        if not isinstance(entry, dict) or set(entry) != {"id", "passed", "evidence"}:
-            raise ValueError("each grader result must contain exactly id, passed, and evidence")
-        expectation_id = entry["id"]
-        if not isinstance(expectation_id, str):
-            raise ValueError("grader result id must be a string")
-        if not isinstance(entry["passed"], bool):
-            raise ValueError(f"grader result {expectation_id!r} passed must be a boolean")
-        if not isinstance(entry["evidence"], str):
-            raise ValueError(f"grader result {expectation_id!r} evidence must be a string")
-        actual_ids.append(expectation_id)
-        grades[expectation_id] = {"passed": entry["passed"], "evidence": entry["evidence"]}
-    if len(actual_ids) != len(expected_ids) or set(actual_ids) != set(expected_ids):
-        missing = sorted(set(expected_ids) - set(actual_ids))
-        extra = sorted(set(actual_ids) - set(expected_ids))
-        duplicates = sorted({item for item in actual_ids if actual_ids.count(item) > 1})
-        raise ValueError(
-            f"grader expectation ids mismatch (missing={missing}, extra={extra}, duplicates={duplicates})"
-        )
+    for kind, judgment in GRADER_JUDGMENTS.items():
+        entries = payload[kind]
+        if not isinstance(entries, list):
+            raise ValueError(f"grader {kind} must be an array")
+        expected_ids = [item["id"] for item in expectations if item["kind"] == kind]
+        actual_ids = []
+        for entry in entries:
+            if not isinstance(entry, dict) or set(entry) != {"id", judgment, "evidence"}:
+                raise ValueError(f"each grader {kind} result must contain exactly id, {judgment}, and evidence")
+            expectation_id = entry["id"]
+            if not isinstance(expectation_id, str):
+                raise ValueError("grader result id must be a string")
+            if not isinstance(entry[judgment], bool):
+                raise ValueError(f"grader result {expectation_id!r} {judgment} must be a boolean")
+            if not isinstance(entry["evidence"], str):
+                raise ValueError(f"grader result {expectation_id!r} evidence must be a string")
+            actual_ids.append(expectation_id)
+            passed = entry[judgment] if kind == "required" else not entry[judgment]
+            grades[expectation_id] = {
+                "passed": passed,
+                "judgment": {judgment: entry[judgment]},
+                "evidence": entry["evidence"],
+            }
+        if len(actual_ids) != len(expected_ids) or set(actual_ids) != set(expected_ids):
+            missing = sorted(set(expected_ids) - set(actual_ids))
+            extra = sorted(set(actual_ids) - set(expected_ids))
+            duplicates = sorted({item for item in actual_ids if actual_ids.count(item) > 1})
+            raise ValueError(
+                f"grader {kind} ids mismatch (missing={missing}, extra={extra}, duplicates={duplicates})"
+            )
     return grades
 
 
@@ -640,6 +659,7 @@ def run_case_once(
                     "axis": invariant["axis"],
                     "critical": invariant["critical"],
                     "passed": grade["passed"],
+                    "judgment": grade["judgment"],
                     "evidence": grade["evidence"],
                 }
             )
