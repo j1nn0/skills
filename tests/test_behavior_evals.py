@@ -67,6 +67,13 @@ class BehaviorEvalSuiteTest(unittest.TestCase):
         }
         self.assertTrue(critical.issubset(referenced), f"Unreferenced critical invariants: {critical - referenced}")
 
+    def test_parallel_batch_summary_keeps_the_short_convergence_guidance(self):
+        skill_text = SKILL_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("separating observed evidence from Explorer interpretation", skill_text)
+        self.assertIn("preserving provenance and contradictions rather than voting", skill_text)
+        self.assertNotIn("keeping each accepted finding attributable", skill_text)
+
     def test_critical_invariants_keep_their_critical_flag(self):
         critical = {
             invariant_id
