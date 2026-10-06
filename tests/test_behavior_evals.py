@@ -121,12 +121,38 @@ class BehaviorEvalSuiteTest(unittest.TestCase):
         self.assertTrue(any("explorer" in item["text"].lower() for item in case["forbidden"]))
         self.assertTrue(any("replacement" in item["text"].lower() for item in case["required"]))
         self.assertTrue(invariants["no_silent_config_fallback"]["critical"])
+        self.assertFalse(invariants["escalate_when_required"]["critical"])
+        self.assertEqual("escalate_when_required", case["route_invariant"])
+        self.assertTrue(all(item["invariant"] == "escalate_when_required" for item in case["required"]))
+        self.assertEqual(2, len(case["forbidden"]))
+        self.assertTrue(all(item["invariant"] == "no_silent_config_fallback" for item in case["forbidden"]))
+
+    def test_trivial_direct_judges_the_route_decision_not_a_performed_edit(self):
+        case = self.case("01-trivial-direct")
+        invariants = self.suite["invariants"]
+
+        self.assertEqual(["direct"], case["expected_routes"])
+        self.assertEqual("correct_route", case.get("route_invariant", "correct_route"))
+        self.assertFalse(invariants["correct_route"]["critical"])
+        self.assertTrue(all("direct" in item["text"].lower() for item in case["required"]))
+        self.assertTrue(any("decision-only" in item["text"].lower() for item in case["required"]))
         self.assertTrue(
-            all(
-                item["invariant"] == "no_silent_config_fallback"
-                for item in case["required"] + case["forbidden"]
+            any(
+                "explorer" in item["text"].lower() and "fixer" in item["text"].lower()
+                for item in case["forbidden"]
             )
         )
+
+    def test_parallel_write_request_reserves_critical_for_concurrent_writes(self):
+        case = self.case("06-write-parallel-request")
+        invariants = self.suite["invariants"]
+        parallel_items = [item for item in case["forbidden"] if item["invariant"] == "no_parallel_fixers"]
+
+        self.assertTrue(invariants["no_parallel_fixers"]["critical"])
+        self.assertEqual("correct_route", case["route_invariant"])
+        self.assertTrue(all(not invariants[item["invariant"]]["critical"] for item in case["required"]))
+        self.assertEqual(1, len(parallel_items))
+        self.assertIn("overlapping writes", parallel_items[0]["text"].lower())
 
     def test_route_taxonomy_counts_handoffs_and_accepts_fixer_re_emit_request(self):
         self.assertTrue(run_behavior_eval.expected_handoff_count("reassess", 0))

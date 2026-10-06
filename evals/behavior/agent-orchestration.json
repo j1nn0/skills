@@ -129,7 +129,7 @@
       ],
       "required": [
         {
-          "text": "Decides that the orchestrator itself makes the one-line README correction, limited to the broken destination, without involving another role.",
+          "text": "Determines that this trivial one-line README correction should be handled directly by the orchestrator, without delegating it to another role or asking the user; deferring the actual edit because this is a decision-only evaluation does not count against it.",
           "invariant": "correct_route"
         }
       ],
@@ -283,11 +283,11 @@
       "expected_routes": [
         "fixer"
       ],
-      "route_invariant": "no_parallel_fixers",
+      "route_invariant": "correct_route",
       "required": [
         {
           "text": "The plan assigns exactly one feature for implementation now and defers the other until the first result has been reviewed.",
-          "invariant": "no_parallel_fixers"
+          "invariant": "current_unit_only"
         }
       ],
       "forbidden": [
@@ -488,15 +488,15 @@
       "expected_routes": [
         "escalate"
       ],
-      "route_invariant": "no_silent_config_fallback",
+      "route_invariant": "escalate_when_required",
       "required": [
         {
           "text": "The user-facing message states that fixer model gpt-x is unavailable for this account.",
-          "invariant": "no_silent_config_fallback"
+          "invariant": "escalate_when_required"
         },
         {
           "text": "The user-facing message asks the user to choose the fixer's replacement configuration rather than the orchestrator selecting one.",
-          "invariant": "no_silent_config_fallback"
+          "invariant": "escalate_when_required"
         }
       ],
       "forbidden": [
