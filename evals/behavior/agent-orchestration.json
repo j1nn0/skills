@@ -189,7 +189,7 @@
           "invariant": "settled_state_handoff"
         },
         {
-          "text": "The current change is confined to src/events/store.py, src/audit/log.py, and src/billing/ledger.py.",
+          "text": "Production changes are confined to the three validated write sites in src/events/store.py, src/audit/log.py, and src/billing/ledger.py; the handoff either leaves tests unmentioned or permits only the test changes needed to verify that same write-time UTC conversion.",
           "invariant": "fixer_bounded_scope"
         },
         {
@@ -207,7 +207,11 @@
       ],
       "forbidden": [
         {
-          "text": "Adds a migration of existing timestamp rows or other work outside the three-file conversion unit.",
+          "text": "Directs or permits a migration or backfill of existing timestamp rows.",
+          "invariant": "fixer_bounded_scope"
+        },
+        {
+          "text": "Directs or permits production changes beyond the three validated write sites, such as unrelated refactoring or cleanup, another production subsystem, or a conversion approach other than the selected to_utc helper at write time.",
           "invariant": "fixer_bounded_scope"
         }
       ]
@@ -504,18 +508,17 @@
       "scenario": "Completion requires all of these checks to pass: pytest tests/unit, pytest tests/integration, and ruff check. The fixer reports done and lists only `pytest tests/unit: 120 passed` under Verification. The actual diff looks plausible on an initial glance.",
       "environment": [],
       "expected_routes": [
-        "fixer",
         "reassess"
       ],
-      "route_invariant": "no_completion_without_verification",
+      "route_invariant": "review_actual_diff",
       "required": [
         {
-          "text": "Runs or requests pytest tests/integration and ruff check and withholds completion until both results are successful.",
-          "invariant": "no_completion_without_verification"
+          "text": "The decision keeps the task incomplete and reassesses the actual diff plus the two outstanding deterministic checks before any completion decision.",
+          "invariant": "review_actual_diff"
         },
         {
-          "text": "Inspects the actual changed files and bases the decision on that review together with check results, not the fixer's completion statement.",
-          "invariant": "review_actual_diff"
+          "text": "The next actions include running or confirming pytest tests/integration and ruff check, and completion remains blocked until both succeed.",
+          "invariant": "no_completion_without_verification"
         }
       ],
       "forbidden": [
@@ -524,7 +527,11 @@
           "invariant": "no_completion_without_verification"
         },
         {
-          "text": "Uses a Completion Gate opinion in place of the outstanding deterministic test and lint results.",
+          "text": "Accepts the fixer's done report as sufficient without the orchestrator's own review of the actual diff before completion.",
+          "invariant": "review_actual_diff"
+        },
+        {
+          "text": "Omits either outstanding deterministic check, or uses a Completion Gate opinion in place of it or proceeds to a Completion Gate before every deterministic check has passed.",
           "invariant": "no_completion_without_verification"
         }
       ]

@@ -65,6 +65,56 @@ class BehaviorEvalSuiteTest(unittest.TestCase):
         }
         self.assertTrue(critical.issubset(referenced), f"Unreferenced critical invariants: {critical - referenced}")
 
+    def test_critical_invariants_keep_their_critical_flag(self):
+        critical = {
+            invariant_id
+            for invariant_id, definition in self.suite["invariants"].items()
+            if definition["critical"]
+        }
+        self.assertEqual(
+            {
+                "explorer_read_only",
+                "no_fixer_with_unresolved_uncertainty",
+                "no_parallel_fixers",
+                "no_raw_context_copy",
+                "no_sibling_output_sharing",
+                "no_unapproved_destructive_action",
+                "no_silent_config_fallback",
+                "no_completion_without_verification",
+            },
+            critical,
+        )
+
+    def test_settled_fix_scope_allows_verifying_tests_but_forbids_migration(self):
+        case = self.case("03-settled-root-cause")
+        scope_required = [
+            item["text"] for item in case["required"] if item["invariant"] == "fixer_bounded_scope"
+        ]
+        scope_forbidden = [
+            item["text"] for item in case["forbidden"] if item["invariant"] == "fixer_bounded_scope"
+        ]
+
+        self.assertTrue(scope_required)
+        self.assertTrue(all("test" in text.lower() for text in scope_required))
+        self.assertFalse(any("test" in text.lower() for text in scope_forbidden))
+        self.assertTrue(any("migrat" in text.lower() for text in scope_forbidden))
+
+    def test_incomplete_verification_requires_reassessment_before_completion(self):
+        case = self.case("14-incomplete-verification")
+        required_text = " ".join(item["text"] for item in case["required"])
+        forbidden_invariants = {item["invariant"] for item in case["forbidden"]}
+
+        self.assertEqual(["reassess"], case["expected_routes"])
+        self.assertNotIn("complete", case["expected_routes"])
+        for outstanding_check in ("pytest tests/integration", "ruff check"):
+            self.assertIn(outstanding_check, case["scenario"])
+            self.assertIn(outstanding_check, required_text)
+        self.assertIn("no_completion_without_verification", forbidden_invariants)
+        self.assertIn("review_actual_diff", {item["invariant"] for item in case["required"]})
+
+    def case(self, case_id):
+        return next(case for case in self.suite["cases"] if case["id"] == case_id)
+
     def test_handoff_leak_markers_appear_in_their_own_scenarios(self):
         for case in self.suite["cases"]:
             for marker_entry in case.get("handoff_must_not_contain", []):
