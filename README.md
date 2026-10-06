@@ -52,6 +52,15 @@ GitHub Actions でも同じテストを実行する。ブログリポジトリ�
 
 Codex で評価する場合は、`evals/trigger/run_codex_eval.py` を使う。`gpt-5.6-luna` と low reasoning で、description とユーザー要求だけからスキルを参照すべきかを判定する。これは Claude の発火率とは別の Codex 向け指標である。結果は `evals/trigger/results/` に保存され、Git では追跡しない。
 
+### behavior の評価
+
+`evals/behavior/` では、スキルの指示に沿った次の行動や委譲内容を、決定的な検査と rubric による採点で評価する。既定の suite は `evals/behavior/agent-orchestration.json`。結果は `evals/behavior/results/` に保存され、Git では追跡しない。`--dry-run` を付けるとモデルを呼び出さず、prompt を確認できる。
+
+```sh
+python3 evals/behavior/run_behavior_eval.py
+python3 evals/behavior/run_behavior_eval.py --dry-run
+```
+
 ## License
 
 Original repository content is licensed under the MIT License unless a skill

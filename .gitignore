@@ -10,6 +10,8 @@ htmlcov/
 
 # Generated trigger-evaluation results
 evals/trigger/results/
+# Generated behavior-evaluation results
+evals/behavior/results/
 
 # Local Python environments
 .venv/
