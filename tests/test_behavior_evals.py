@@ -97,6 +97,18 @@ class BehaviorEvalSuiteTest(unittest.TestCase):
         self.assertIn("preserving provenance and contradictions rather than voting", skill_text)
         self.assertNotIn("keeping each accepted finding attributable", skill_text)
 
+    def test_parallel_batches_route_to_the_reference_before_parallel_work(self):
+        skill_text = SKILL_PATH.read_text(encoding="utf-8")
+        section = skill_text.split("### Parallel Explorer batches", 1)[1].split("\n## ", 1)[0]
+        routing = next(sentence for sentence in section.split(". ") if "before handling" in sentence).lower()
+
+        self.assertIn("read [`parallel.md`](references/parallel.md)", routing)
+        for operation in ("admission", "dispatch", "collection", "resume", "convergence"):
+            self.assertIn(operation, routing)
+        self.assertIn("authoritative", routing)
+        for detail in ("Before completing convergence", "topic names alone", "source association"):
+            self.assertNotIn(detail, skill_text)
+
     def test_critical_invariants_keep_their_critical_flag(self):
         critical = {
             invariant_id
