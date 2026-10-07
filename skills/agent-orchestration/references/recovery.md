@@ -23,7 +23,10 @@ observed within 5000ms, so the agent likely never started a turn. Common causes
 are a slash command that returns immediately, an empty or malformed prompt, or a
 pane no longer running the agent. Read the recent output and confirm the agent
 with `herdr agent get` before resending; do not interrupt, and do not assume the
-prompt was lost until you have looked.
+prompt was lost until you have looked. A turn that finished before `working` was
+observed can also report this: if the "Waiting" freshness check in `SKILL.md`
+returns `completion_advanced`, read the result instead of resending. A
+`no_progress` verdict after any wait is handled like this failure.
 
 ## After the agent starts working
 
@@ -31,7 +34,8 @@ A timeout alone does not mean the agent is stuck.
 
 After a timeout, inspect:
 
-- `herdr agent get`;
+- `herdr agent get`, with the "Waiting" freshness check; `progress_observed`
+  means the turn is still running;
 - recent output with `herdr agent read`;
 - the foreground process state when relevant.
 

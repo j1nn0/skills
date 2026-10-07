@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""Determine whether an agent completed a turn after a snapshot baseline."""
+
+import json
+import sys
+
+STATUSES = {"idle", "working", "blocked", "done", "unknown"}
+READY_STATUSES = {"idle", "done"}
+USAGE = "usage: freshness_validate (read one JSON object from stdin)"
+
+
+def reject_json_constant(_value):
+    raise ValueError("non-standard JSON constant")
+
+
+def emit_json(value):
+    print(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+
+
+def verdict(fresh, reason, progress):
+    return {"fresh": fresh, "reason": reason, "progress": progress}
+
+
+def non_negative_integer(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def read_snapshot(value):
+    if not isinstance(value, dict):
+        return None
+
+    status = value.get("agent_status")
+    if not isinstance(status, str) or status not in STATUSES:
+        return None
+
+    state_change_seq = value.get("state_change_seq")
+    if not non_negative_integer(state_change_seq):
+        return None
+
+    completion_seq = value.get("completion_seq")
+    if completion_seq is not None:
+        if not non_negative_integer(completion_seq) or completion_seq > state_change_seq:
+            return None
+
+    return status, state_change_seq, completion_seq
+
+
+def validate(data):
+    if not isinstance(data, dict):
+        return verdict(False, "invalid_input", False)
+
+    if "baseline" not in data or "current" not in data:
+        return verdict(False, "invalid_input", False)
+
+    baseline = read_snapshot(data["baseline"])
+    current = read_snapshot(data["current"])
+    if baseline is None or current is None:
+        return verdict(False, "invalid_input", False)
+
+    baseline_status, baseline_seq, _baseline_completion_seq = baseline
+    current_status, current_seq, current_completion_seq = current
+    progress = current_seq > baseline_seq
+
+    if baseline_status not in READY_STATUSES:
+        return verdict(False, "baseline_not_ready", progress)
+    if current_seq < baseline_seq:
+        return verdict(False, "sequence_regressed", False)
+    if (
+        current_status in READY_STATUSES
+        and current_completion_seq is not None
+        and current_completion_seq > baseline_seq
+    ):
+        return verdict(True, "completion_advanced", progress)
+    if current_status == "blocked":
+        return verdict(False, "blocked", progress)
+    if current_status == "unknown":
+        return verdict(False, "unknown_status", progress)
+    if current_status == "working" and progress:
+        return verdict(False, "progress_observed", True)
+    return verdict(False, "no_progress", progress)
+
+
+def main(argv):
+    if len(argv) != 1:
+        print(USAGE, file=sys.stderr)
+        return 2
+    try:
+        data = json.loads(sys.stdin.read(), parse_constant=reject_json_constant)
+    except (ValueError, TypeError, RecursionError):
+        emit_json(verdict(False, "invalid_input", False))
+        return 0
+    emit_json(validate(data))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

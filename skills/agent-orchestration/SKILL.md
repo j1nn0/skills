@@ -427,8 +427,9 @@ One pass through a delegated cycle looks like this:
 
 ```bash
 # investigate
-herdr agent get <explorer-name>   # confirm idle before prompting
+herdr agent get <explorer-name>   # confirm idle; keep as baseline
 herdr agent prompt <explorer-name> '<standalone investigation prompt>' --wait
+herdr agent get <explorer-name>   # freshness check (see "Waiting")
 herdr agent read <explorer-name> --source recent-unwrapped --lines 200
 ```
 
@@ -438,6 +439,7 @@ Evaluate the evidence, decide the strategy yourself, then:
 # implement
 herdr agent get <fixer-name>
 herdr agent prompt <fixer-name> '<standalone implementation prompt>' --wait
+herdr agent get <fixer-name>
 herdr agent read <fixer-name> --source recent-unwrapped --lines 200
 ```
 
@@ -464,7 +466,8 @@ Ignore:
 - blocks merely echoed from the prompt or quoted as examples;
 - result blocks from earlier prompts or sessions.
 
-Before accepting the isolated block, pipe `{"role": "explorer" | "fixer",
+Read a result only after the "Waiting" freshness check passes. Before accepting
+the isolated block, pipe `{"role": "explorer" | "fixer",
 "result": "<block>"}` to `scripts/result_validate` and require `valid: true`. It
 checks role-specific structure only; freshness, evidence quality, and
 completion remain yours to validate.
@@ -491,15 +494,32 @@ solve a problem most units never hit.
 
 ## Waiting
 
-`herdr agent prompt --wait` settling on `idle`, `done`, or `blocked` is
-authoritative when the integration is healthy.
+`herdr agent prompt --wait` settling on `idle`, `done`, or `blocked` tells you
+when to look, not which prompt produced what you read. It does not track turns:
+prompting an agent that is already working lets the wait match that earlier turn
+finishing, and the read then returns the previous turn's result — a stale
+`<HERDR_RESULT>` that reads as an answer to the prompt you just sent. Once you
+hold a plausible-looking block, nothing in it tells you which prompt produced
+it, so establish freshness from Herdr's lifecycle sequence, not the text:
 
-It does not track turns, though. Prompting an agent that is already working lets
-the wait match that earlier turn finishing, and the read then returns the
-previous turn's result — a stale `<HERDR_RESULT>` that reads as an answer to the
-prompt you just sent. Confirm the agent is idle with `herdr agent get` before
-prompting, rather than trying to detect staleness afterwards: once you hold a
-plausible-looking block, nothing in it tells you which prompt produced it.
+1. Before prompting, run `herdr agent get <name>`, prompt only an `idle` or
+   `done` agent, and keep that agent object as the baseline. `state_change_seq`
+   is a server-wide counter stamped on every state transition; `completion_seq`
+   is present only while the current state is a completed turn.
+2. After the wait returns, whatever it returned, run `herdr agent get <name>`
+   again and pipe `{"baseline": <agent>, "current": <agent>}` to
+   `scripts/freshness_validate`.
+3. Read the result only on `fresh: true` (`completion_advanced`): a completion
+   newer than the baseline, even if `working` was never observed.
+   `progress_observed` means still working, so wait again; `baseline_not_ready`
+   means the prompt should not have been sent. `blocked`, `no_progress`,
+   `unknown_status`, and `sequence_regressed` (the Herdr server restarted, so
+   freshness cannot be proven) go to `recovery.md`.
+
+Baselines belong to the current prompt only; never persist them in session
+state. Herdr has no prompt or turn id, so do not invent one. Freshness and
+`result_validate` structure are separate checks: a fresh turn can return a
+malformed block, and a well-formed block can be stale.
 
 Read [`recovery.md`](references/recovery.md) when a prompt is rejected before it reaches the
 agent, times out, settles on `blocked`, or an agent appears stuck. It holds the
