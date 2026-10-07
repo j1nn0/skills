@@ -1,0 +1,364 @@
+#!/usr/bin/env python3
+"""Record anonymous orchestration control-flow events and summarize counts."""
+
+import importlib.machinery
+import importlib.util
+import json
+import os
+import stat
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+USAGE = """usage:
+  tracectl record delegation --role {explorer|fixer} --outcome {accepted|recovery}
+  tracectl record recovery --reason REASON
+  tracectl record parallel --phase {admission|convergence} --outcome OUTCOME
+  tracectl summary [--all]"""
+
+ROLES = ("explorer", "fixer")
+DELEGATION_OUTCOMES = ("accepted", "recovery")
+RECOVERY_REASONS = (
+    "agent_blocked",
+    "agent_prompt_stalled",
+    "timeout",
+    "blocked",
+    "no_progress",
+    "sequence_regressed",
+    "unknown_status",
+    "missing_result",
+    "malformed_result",
+    "transport_fallback",
+)
+ADMISSION_OUTCOMES = frozenset(
+    {
+        "invalid_enabled",
+        "disabled",
+        "invalid_max_explorers",
+        "missing_objective",
+        "invalid_units",
+        "duplicate_or_missing_unit_id",
+        "non_explorer_role",
+        "read_only_required",
+        "write_intent_forbidden",
+        "nested_batch_forbidden",
+        "invalid_dependencies",
+        "sibling_dependency_forbidden",
+        "bounded_objective_required",
+        "invalid_read_scope",
+        "invalid_active_batches",
+        "active_batch_limit",
+        "single_unit_sequential",
+        "too_few_explorers",
+        "too_many_explorers",
+        "admitted",
+    }
+)
+CONVERGENCE_OUTCOMES = frozenset(
+    {
+        "invalid_input",
+        "invalid_batch_size",
+        "invalid_result",
+        "failed_without_gaps",
+        "incomplete_units",
+        "active_units",
+        "ready_with_gaps",
+        "all_accepted",
+    }
+)
+
+
+SESSIONCTL = None
+
+
+def load_sessionctl():
+    global SESSIONCTL
+    if SESSIONCTL is not None:
+        return SESSIONCTL
+
+    sessionctl_path = Path(__file__).resolve().parent / "sessionctl"
+    loader = importlib.machinery.SourceFileLoader(
+        "agent_orchestration_sessionctl", str(sessionctl_path)
+    )
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    if spec is None:
+        raise ImportError("unable to load sessionctl")
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    SESSIONCTL = module
+    return SESSIONCTL
+
+
+def parse_options(args, allowed):
+    values = {}
+    index = 0
+    while index < len(args):
+        option = args[index]
+        if option not in allowed or option in values or index + 1 >= len(args):
+            return None
+        values[option] = args[index + 1]
+        index += 2
+    if set(values) != set(allowed):
+        return None
+    return values
+
+
+def parse_args(argv):
+    args = argv[1:]
+    if len(args) == 2 and args[0] == "summary" and args[1] == "--all":
+        return "summary", {"all": True}
+    if args == ["summary"]:
+        return "summary", {"all": False}
+    if len(args) < 2 or args[0] != "record":
+        return None
+
+    event = args[1]
+    if event == "delegation":
+        values = parse_options(args[2:], {"--role", "--outcome"})
+        if values is None:
+            return None
+        return "record", {
+            "event": event,
+            "role": values["--role"],
+            "outcome": values["--outcome"],
+        }
+    if event == "recovery":
+        values = parse_options(args[2:], {"--reason"})
+        if values is None:
+            return None
+        return "record", {"event": event, "reason": values["--reason"]}
+    if event == "parallel":
+        values = parse_options(args[2:], {"--phase", "--outcome"})
+        if values is None:
+            return None
+        return "record", {
+            "event": event,
+            "phase": values["--phase"],
+            "outcome": values["--outcome"],
+        }
+    return None
+
+
+def valid_event_values(event):
+    if event["event"] == "delegation":
+        return (
+            isinstance(event["role"], str)
+            and event["role"] in ROLES
+            and isinstance(event["outcome"], str)
+            and event["outcome"] in DELEGATION_OUTCOMES
+        )
+    if event["event"] == "recovery":
+        return isinstance(event["reason"], str) and event["reason"] in RECOVERY_REASONS
+    if event["event"] == "parallel":
+        phase = event["phase"]
+        outcome = event["outcome"]
+        if not isinstance(phase, str) or not isinstance(outcome, str):
+            return False
+        allowed = (
+            ADMISSION_OUTCOMES
+            if phase == "admission"
+            else CONVERGENCE_OUTCOMES
+            if phase == "convergence"
+            else ()
+        )
+        return outcome in allowed
+    return False
+
+
+def trace_file(identity):
+    state_dir = SESSIONCTL.state_directory()
+    session_name = SESSIONCTL.session_file(identity).with_suffix(".jsonl").name
+    return state_dir / "traces" / session_name
+
+
+def emit_json(value):
+    try:
+        sys.stdout.write(json.dumps(value, separators=(",", ":")) + "\n")
+        sys.stdout.flush()
+    except (OSError, UnicodeError, ValueError):
+        stdout_fd = None
+        null_fd = None
+        try:
+            stdout_fd = sys.stdout.fileno()
+            null_fd = os.open(os.devnull, os.O_WRONLY)
+            if null_fd != stdout_fd:
+                os.dup2(null_fd, stdout_fd)
+        except (OSError, ValueError):
+            sys.stdout = None
+        finally:
+            if null_fd is not None and null_fd != stdout_fd:
+                try:
+                    os.close(null_fd)
+                except OSError:
+                    pass
+
+
+def record_event(event):
+    if not valid_event_values(event):
+        return {"ok": False, "reason": "invalid_event"}
+
+    load_sessionctl()
+    identity = SESSIONCTL.resolve_session()
+    if identity is None:
+        return {"ok": False, "reason": "no_session"}
+
+    timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds").replace(
+        "+00:00", "Z"
+    )
+    line = {"schema_version": 1, "ts": timestamp, **event}
+
+    try:
+        path = trace_file(identity)
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.chmod(path.parent, 0o700)
+        flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        flags |= getattr(os, "O_NONBLOCK", 0)
+        fd = os.open(path, flags, 0o600)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                return {"ok": False, "reason": "trace_unavailable"}
+            os.fchmod(fd, 0o600)
+            payload = (json.dumps(line, separators=(",", ":")) + "\n").encode(
+                "utf-8"
+            )
+            written = os.write(fd, payload)
+            if written != len(payload):
+                return {"ok": False, "reason": "trace_unavailable"}
+        finally:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+    except (OSError, UnicodeError):
+        return {"ok": False, "reason": "trace_unavailable"}
+    return {"ok": True, "reason": "recorded"}
+
+
+def empty_counts(scope):
+    return {
+        "ok": True,
+        "reason": "summarized",
+        "scope": scope,
+        "events": 0,
+        "invalid_lines": 0,
+        "delegations": {
+            role: {outcome: 0 for outcome in DELEGATION_OUTCOMES}
+            for role in ROLES
+        },
+        "recoveries": {reason: 0 for reason in RECOVERY_REASONS},
+        "parallel": {"admission": {}, "convergence": {}},
+    }
+
+
+def valid_trace_line(value):
+    if not isinstance(value, dict) or type(value.get("schema_version")) is not int:
+        return False
+    if value.get("schema_version") != 1 or not isinstance(value.get("ts"), str):
+        return False
+    event = value.get("event")
+    if event == "delegation":
+        if set(value) != {"schema_version", "ts", "event", "role", "outcome"}:
+            return False
+        return valid_event_values(
+            {"event": event, "role": value["role"], "outcome": value["outcome"]}
+        )
+    if event == "recovery":
+        if set(value) != {"schema_version", "ts", "event", "reason"}:
+            return False
+        return valid_event_values({"event": event, "reason": value["reason"]})
+    if event == "parallel":
+        if set(value) != {"schema_version", "ts", "event", "phase", "outcome"}:
+            return False
+        return valid_event_values(
+            {
+                "event": event,
+                "phase": value["phase"],
+                "outcome": value["outcome"],
+            }
+        )
+    return False
+
+
+def add_event(counts, value):
+    counts["events"] += 1
+    if value["event"] == "delegation":
+        counts["delegations"][value["role"]][value["outcome"]] += 1
+    elif value["event"] == "recovery":
+        counts["recoveries"][value["reason"]] += 1
+    else:
+        phase_counts = counts["parallel"][value["phase"]]
+        outcome = value["outcome"]
+        phase_counts[outcome] = phase_counts.get(outcome, 0) + 1
+
+
+def read_trace_files(paths, counts):
+    for path in paths:
+        raw = path.read_bytes()
+        text = raw.decode("utf-8")
+        for line in text.split("\n"):
+            if line == "":
+                continue
+            try:
+                value = json.loads(line)
+            except (ValueError, TypeError, RecursionError):
+                counts["invalid_lines"] += 1
+                continue
+            if not valid_trace_line(value):
+                counts["invalid_lines"] += 1
+                continue
+            add_event(counts, value)
+
+
+def summarize(all_sessions):
+    scope = "all" if all_sessions else "session"
+    counts = empty_counts(scope)
+    try:
+        load_sessionctl()
+        traces_dir = SESSIONCTL.state_directory() / "traces"
+        if all_sessions:
+            try:
+                traces_dir.stat()
+            except FileNotFoundError:
+                return counts
+            if not traces_dir.is_dir():
+                return {"ok": False, "reason": "trace_unavailable"}
+            paths = sorted(traces_dir.glob("session-*.jsonl"))
+        else:
+            identity = SESSIONCTL.resolve_session()
+            if identity is None:
+                return {"ok": False, "reason": "no_session"}
+            path = trace_file(identity)
+            try:
+                path.stat()
+            except FileNotFoundError:
+                paths = []
+            else:
+                paths = [path]
+        read_trace_files(paths, counts)
+    except (OSError, UnicodeError):
+        return {"ok": False, "reason": "trace_unavailable"}
+    return counts
+
+
+def main(argv):
+    parsed = parse_args(argv)
+    if parsed is None:
+        print(USAGE, file=sys.stderr)
+        return 2
+
+    action, values = parsed
+    try:
+        if action == "summary":
+            result = summarize(values["all"])
+        else:
+            result = record_event(values)
+    except Exception:
+        result = {"ok": False, "reason": "trace_unavailable"}
+    emit_json(result)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

@@ -506,6 +506,16 @@ is enough. Either request is a same-unit recovery prompt that re-delivers
 finished work, not new investigation or another Explorer round; existing retry
 bounds and the "Waiting" freshness check apply.
 
+### Trace
+
+Record a best-effort counter with `scripts/tracectl record` only at these
+settled boundaries: a delegated prompt's final disposition (`delegation`,
+`accepted` or `recovery`), each recovery route entered (`recovery`, named by
+the Herdr, freshness, or result failure, or `transport_fallback` for the
+"Reading results" file route), and each `parallel_validate` verdict you act on
+(`parallel`, with its reason). It accepts enums only, so never pass task content.
+A failed or unavailable trace never changes the task flow.
+
 ## Waiting
 
 `herdr agent prompt --wait` settling on `idle`, `done`, or `blocked` tells you

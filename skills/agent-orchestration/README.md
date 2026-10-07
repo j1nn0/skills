@@ -59,6 +59,7 @@ skills/agent-orchestration/scripts/sessionctl set-role --role explorer --harness
 | `scripts/parallel_validate` | Pipe one JSON object on stdin, for example `printf '%s\n' "$json" | scripts/parallel_validate`; `mode` is `admission` or `convergence` (payloads in `references/parallel.md`). |
 | `scripts/result_validate` | Explorer / Fixer `<HERDR_RESULT>` structural contract validator; pipe `{"role", "result"}` on stdin. Freshness, evidence, and completion stay with the orchestrator. |
 | `scripts/freshness_validate` | Compares `herdr agent get` snapshots taken before and after a prompt to prove a completed turn is newer than the baseline; see "Waiting" in `SKILL.md`. |
+| `scripts/tracectl` | Best-effort local counters for delegation outcomes, recovery reasons, and Parallel verdicts, plus a counts-only `summary`. Stores only bounded orchestration metadata; never prompts, results, or task content. |
 | `scripts/sessionctl` | Stdlib-only session-state inspector and role-configuration persistence CLI; see `references/startup.md` for policy. |
 | `references/jev.md` | Completion Gate policy, with the multi-gate overview and Explorer Gate pointer. |
 | `references/explorer-gate.md` | Optional post-Explorer evidence-sufficiency policy, thresholds, conservative action rules, and integration. |
