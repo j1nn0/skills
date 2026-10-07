@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""Validate the structure of a delegated agent result block."""
+
+import json
+import re
+import sys
+
+OPENING_TAG = "<HERDR_RESULT>"
+CLOSING_TAG = "</HERDR_RESULT>"
+USAGE = "usage: result_validate (read one JSON object from stdin)"
+ROLE_FIELDS = {
+    "explorer": ("Conclusion", "Evidence", "Impact", "Recommendation", "Confidence"),
+    "fixer": ("Changes", "Verification", "Remaining issues"),
+}
+
+
+def reject_json_constant(_value):
+    raise ValueError("non-standard JSON constant")
+
+
+def emit_json(value):
+    print(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+
+
+def verdict(valid, reason, role=None, field=None, checks=None):
+    return {
+        "valid": valid,
+        "reason": reason,
+        "role": role,
+        "field": field,
+        "checks": [] if checks is None else checks,
+    }
+
+
+def envelope_body(result):
+    opening_count = result.count(OPENING_TAG)
+    closing_count = result.count(CLOSING_TAG)
+    if opening_count == 0:
+        return None, "missing_opening_tag"
+    if closing_count == 0:
+        return None, "missing_closing_tag"
+    if opening_count > 1:
+        return None, "duplicate_opening_tag"
+    if closing_count > 1:
+        return None, "duplicate_closing_tag"
+
+    opening_index = result.find(OPENING_TAG)
+    closing_index = result.find(CLOSING_TAG)
+    if closing_index < opening_index:
+        return None, "tag_order"
+    if not result.strip().startswith(OPENING_TAG) or not result.strip().endswith(CLOSING_TAG):
+        return None, "text_outside_block"
+
+    body_start = opening_index + len(OPENING_TAG)
+    body = result[body_start:closing_index]
+    if not body.strip():
+        return None, "empty_block"
+    return body, None
+
+
+def parse_fields(body, labels):
+    label_pattern = re.compile(
+        r"^[ \t]*(" + "|".join(re.escape(label) for label in labels) + r"):",
+        re.MULTILINE,
+    )
+    matches = list(label_pattern.finditer(body))
+    if matches and body[:matches[0].start()].strip():
+        return None, None, "unexpected_content"
+
+    fields = {label: [] for label in labels}
+    ordered_labels = []
+    for index, match in enumerate(matches):
+        label = match.group(1)
+        value_start = match.end()
+        value_end = matches[index + 1].start() if index + 1 < len(matches) else len(body)
+        fields[label].append(body[value_start:value_end])
+        ordered_labels.append(label)
+    return fields, ordered_labels, None
+
+
+def confidence_error(value):
+    stripped = value.strip()
+    level = re.match(r"(high|medium|low)\b", stripped)
+    if level is None:
+        return "invalid_confidence_level"
+
+    separator = re.match(r"[ \t]+—", stripped[level.end():])
+    if separator is None:
+        return "invalid_confidence_separator"
+    if not stripped[level.end() + separator.end():].strip():
+        return "missing_confidence_reason"
+    return None
+
+
+def validate(data):
+    if not isinstance(data, dict):
+        return verdict(False, "invalid_input")
+
+    role = data.get("role")
+    if not isinstance(role, str) or role not in ROLE_FIELDS:
+        return verdict(False, "invalid_role")
+
+    result = data.get("result")
+    if not isinstance(result, str):
+        return verdict(False, "invalid_result", role=role)
+    if not result.strip():
+        return verdict(False, "empty_result", role=role)
+
+    body, error = envelope_body(result)
+    if error is not None:
+        return verdict(False, error, role=role)
+    checks = ["envelope"]
+
+    labels = ROLE_FIELDS[role]
+    fields, ordered_labels, error = parse_fields(body, labels)
+    if error is not None:
+        return verdict(False, error, role=role, checks=checks)
+
+    for label in labels:
+        if not fields[label]:
+            return verdict(False, "missing_field", role=role, field=label, checks=checks)
+    checks.append("required_fields")
+
+    for label in labels:
+        if len(fields[label]) > 1:
+            return verdict(False, "duplicate_field", role=role, field=label, checks=checks)
+    checks.append("unique_fields")
+
+    if ordered_labels != list(labels):
+        return verdict(False, "field_order", role=role, checks=checks)
+    checks.append("field_order")
+
+    for label in labels:
+        if not fields[label][0].strip():
+            return verdict(False, "empty_field", role=role, field=label, checks=checks)
+    checks.append("nonempty_fields")
+
+    if role == "explorer":
+        error = confidence_error(fields["Confidence"][0])
+        if error is not None:
+            return verdict(False, error, role=role, field="Confidence", checks=checks)
+        checks.append("confidence")
+
+    return verdict(True, "valid", role=role, checks=checks)
+
+
+def main(argv):
+    if len(argv) != 1:
+        print(USAGE, file=sys.stderr)
+        return 2
+    try:
+        data = json.loads(sys.stdin.read(), parse_constant=reject_json_constant)
+    except (ValueError, TypeError, RecursionError):
+        emit_json(verdict(False, "invalid_input"))
+        return 0
+    emit_json(validate(data))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

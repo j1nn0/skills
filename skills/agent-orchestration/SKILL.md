@@ -464,6 +464,11 @@ Ignore:
 - blocks merely echoed from the prompt or quoted as examples;
 - result blocks from earlier prompts or sessions.
 
+Before accepting the isolated block, pipe `{"role": "explorer" | "fixer",
+"result": "<block>"}` to `scripts/result_validate` and require `valid: true`. It
+checks role-specific structure only; freshness, evidence quality, and
+completion remain yours to validate.
+
 Read with `--source recent-unwrapped`. The default `recent` source is
 line-wrapped, so a long result can arrive with its tags and fields broken
 mid-line and look malformed when it is intact.
