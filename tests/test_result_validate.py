@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import unicodedata
 import sys
 import unittest
 from pathlib import Path
@@ -46,6 +47,18 @@ DEFAULT_FIXER = {
     "Verification": "python3 -m unittest passed.",
     "Remaining issues": "None.",
 }
+
+
+
+def terminal_width(text):
+    return sum(
+        0
+        if unicodedata.combining(character)
+        else 2
+        if unicodedata.east_asian_width(character) in ("W", "F")
+        else 1
+        for character in text
+    )
 
 
 class ResultValidateTest(unittest.TestCase):
@@ -185,6 +198,196 @@ class ResultValidateTest(unittest.TestCase):
     def test_explorer_canonical_block_passes_all_checks(self):
         self.assert_verdict(
             self.validate_result("explorer", self.result_block("explorer")),
+            True,
+            "valid",
+            role="explorer",
+            checks=EXPLORER_CHECKS,
+        )
+
+
+    def test_explorer_accepts_pi_tui_border_fixture_and_borderless_variant(self):
+        fixture_path = Path(__file__).parent / "fixtures" / "pi_tui_border_explorer_result.txt"
+        result = fixture_path.read_text(encoding="utf-8")
+        with self.subTest(variant="fixture_with_border"):
+            self.assert_verdict(
+                self.validate_result("explorer", result),
+                True,
+                "valid",
+                role="explorer",
+                checks=EXPLORER_CHECKS,
+            )
+
+        borderless_result = chr(10).join(
+            line[:-1].rstrip(" " + chr(9)) if line.endswith("│") else line
+            for line in result.splitlines()
+        )
+        with self.subTest(variant="fixture_without_border"):
+            self.assert_verdict(
+                self.validate_result("explorer", borderless_result),
+                True,
+                "valid",
+                role="explorer",
+                checks=EXPLORER_CHECKS,
+            )
+
+    def test_explorer_preserves_midline_and_single_trailing_border_glyphs(self):
+        midline_glyph = self.result_block("explorer", values={"Evidence": "- a │ b"})
+        with self.subTest(variant="midline_glyph"):
+            self.assert_verdict(
+                self.validate_result("explorer", midline_glyph),
+                True,
+                "valid",
+                role="explorer",
+                checks=EXPLORER_CHECKS,
+            )
+
+        trailing_glyph = self.result_block(
+            "explorer", values={"Evidence": " " * 40 + "│"}
+        )
+        lines = trailing_glyph.splitlines()
+        evidence_line = next(line for line in lines if line.startswith("Evidence:"))
+        self.assertEqual(1, sum(line.endswith("│") for line in lines))
+        self.assertEqual(len(evidence_line), max(map(len, lines)))
+        with self.subTest(variant="single_trailing_glyph_on_longest_line"):
+            self.assert_verdict(
+                self.validate_result("explorer", trailing_glyph),
+                True,
+                "valid",
+                role="explorer",
+                checks=EXPLORER_CHECKS,
+            )
+
+    def test_explorer_does_not_normalize_non_column_or_overlapped_border_glyphs(self):
+        different_lengths = self.result_block(
+            "explorer",
+            values={
+                "Conclusion": "x",
+                "Evidence": "x",
+                "Impact": "x",
+                "Recommendation": "x",
+                "Confidence": "low — x",
+            },
+        ).splitlines()
+        bordered_widths = (60, 65)
+        different_lengths[0] = (
+            OPENING_TAG + " " * (bordered_widths[0] - len(OPENING_TAG) - 1) + "│"
+        )
+        conclusion_index = next(
+            index for index, line in enumerate(different_lengths) if line.startswith("Conclusion:")
+        )
+        conclusion = "Conclusion: x"
+        different_lengths[conclusion_index] = (
+            conclusion + " " * (bordered_widths[1] - len(conclusion) - 1) + "│"
+        )
+        nonbordered_lengths = [
+            len(line) for line in different_lengths if not line.endswith("│")
+        ]
+        self.assertEqual(set(bordered_widths), {
+            len(line) for line in different_lengths if line.endswith("│")
+        })
+        self.assertLess(max(nonbordered_lengths), min(bordered_widths))
+        with self.subTest(variant="different_bordered_lengths"):
+            self.assert_verdict(
+                self.validate_result("explorer", chr(10).join(different_lengths)),
+                False,
+                "unexpected_content",
+                role="explorer",
+                checks=["envelope"],
+            )
+
+        overlapped = self.result_block(
+            "explorer", values={"Confidence": "low — " + "x" * 30}
+        ).splitlines()
+        width = 40
+        overlapped[0] = OPENING_TAG + " " * (width - len(OPENING_TAG) - 1) + "│"
+        evidence_index = next(
+            index for index, line in enumerate(overlapped) if line.startswith("Evidence:")
+        )
+        prefix = "Evidence: "
+        overlapped[evidence_index] = prefix + " " * (width - len(prefix) - 1) + "│"
+        self.assertEqual(
+            {width}, {len(line) for line in overlapped if line.endswith("│")}
+        )
+        self.assertTrue(
+            any(len(line) >= width for line in overlapped if not line.endswith("│"))
+        )
+        with self.subTest(variant="nonborder_line_reaches_border_width"):
+            self.assert_verdict(
+                self.validate_result("explorer", chr(10).join(overlapped)),
+                False,
+                "unexpected_content",
+                role="explorer",
+                checks=["envelope"],
+            )
+
+
+    def test_border_normalization_uses_terminal_display_width_for_wide_text(self):
+        lines = [
+            OPENING_TAG,
+            "Conclusion: 日本語の結論",
+            "Evidence: src/a.py:12 の記述を確認",
+            "Impact: 影響は限定的",
+            "Recommendation: 関連箇所を再確認",
+            "Confidence: high — 直接確認した",
+            CLOSING_TAG,
+        ]
+        border_width = 80
+        bordered_lines = [
+            line + " " * (border_width - terminal_width(line) - 1) + "│"
+            for line in lines
+        ]
+        self.assertEqual({border_width}, {terminal_width(line) for line in bordered_lines})
+        # The former len()-based check saw different row widths and skipped normalization.
+        self.assertGreater(len({len(line) for line in bordered_lines}), 1)
+        self.assert_verdict(
+            self.validate_result("explorer", chr(10).join(bordered_lines)),
+            True,
+            "valid",
+            role="explorer",
+            checks=EXPLORER_CHECKS,
+        )
+
+    def test_border_normalization_rejects_codepoint_equal_but_display_mismatched_rows(self):
+        lines = self.result_block("explorer").splitlines()
+        width = 60
+        lines[0] = OPENING_TAG + " " * (width - len(OPENING_TAG) - 1) + "│"
+        conclusion = "Conclusion: 日本"
+        lines[1] = conclusion + " " * (width - len(conclusion) - 1) + "│"
+        bordered_lines = [line for line in lines if line.endswith("│")]
+        self.assertEqual({width}, {len(line) for line in bordered_lines})
+        self.assertEqual({width, width + 2}, {terminal_width(line) for line in bordered_lines})
+        self.assertLess(
+            max(terminal_width(line) for line in lines if not line.endswith("│")),
+            width,
+        )
+        self.assert_verdict(
+            self.validate_result("explorer", chr(10).join(lines)),
+            False,
+            "unexpected_content",
+            role="explorer",
+            checks=["envelope"],
+        )
+
+    def test_fixer_border_normalization_still_detects_empty_field(self):
+        result = self.result_block("fixer", values={"Remaining issues": ""})
+        lines = result.splitlines()
+        width = max(map(len, lines)) + 10
+        bordered_result = chr(10).join(f"{line:<{width - 1}}│" for line in lines)
+        self.assertEqual({width}, {len(line) for line in bordered_result.splitlines()})
+        self.assert_verdict(
+            self.validate_result("fixer", bordered_result),
+            False,
+            "empty_field",
+            field="Remaining issues",
+            role="fixer",
+            checks=["envelope", "required_fields", "unique_fields", "field_order"],
+        )
+
+    def test_explorer_accepts_very_long_multiline_evidence(self):
+        evidence = chr(10).join(f"- evidence item {index}" for index in range(2000))
+        result = self.result_block("explorer", values={"Evidence": evidence})
+        self.assert_verdict(
+            self.validate_result("explorer", result),
             True,
             "valid",
             role="explorer",

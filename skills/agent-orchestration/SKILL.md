@@ -111,8 +111,14 @@ Delegated agents do their own work and report back. They never invoke
 `agent-orchestration`, delegate further, or run Herdr agent or pane control
 commands.
 
-Require every delegated response to end with one concise `<HERDR_RESULT>` block,
-in the format given for that role.
+Require every delegated response to end with one `<HERDR_RESULT>` block in the
+format given for that role, and say in the handoff that it is a concise
+transport summary, not the full report: the core findings or changes and only
+the key evidence or verification review needs. Only when supporting detail
+would not fit safely does the agent write it to a temporary Markdown file such
+as `/tmp/<descriptive-name>.md` and cite the path inside an existing field. For
+an explorer, say that this file under `/tmp`, outside the working tree, is its
+only permitted write.
 
 ## Context routing and unit sizing
 
@@ -300,6 +306,10 @@ Questions to answer:
    logic?
 3. Which of those is supported by evidence rather than inference?
 
+Keep the result block to the core findings and key evidence. If supporting
+detail is long, write it to /tmp/<descriptive-name>.md, outside the repository
+and the only file you may write, and cite the path in Evidence.
+
 End your response with exactly one block in this format and nothing after it:
 
 <HERDR_RESULT>
@@ -409,6 +419,9 @@ Make the local implementation decisions inside those boundaries yourself. If
 any part of this instruction turns out to be wrong or underdetermined, stop
 and report it instead of guessing.
 
+Keep the result block to what review needs. Put long logs or details in
+/tmp/<descriptive-name>.md and cite the path in Verification.
+
 End your response with exactly one block in this format and nothing after it:
 
 <HERDR_RESULT>
@@ -476,21 +489,22 @@ Read with `--source recent-unwrapped`. The default `recent` source is
 line-wrapped, so a long result can arrive with its tags and fields broken
 mid-line and look malformed when it is intact.
 
-When the block is missing or truncated, escalate in this order:
+When the block is missing or truncated:
 
-1. Raise `--lines`. This recovers a block that merely scrolled past the default
-   window.
-2. If a higher `--lines` reveals nothing more, stop raising it. The agent is
-   drawing on the terminal's alternate screen, where rows that scroll away never
-   reach Herdr's scrollback, so no line count can bring them back.
-3. Ask the agent to re-emit only its final result without repeating the work.
-4. If the result is long enough to scroll away again, ask the agent to write its
-   complete response as Markdown to a temporary file and reply with the path
-   only, then read that file yourself.
+1. Raise `--lines` once. This recovers a block that merely scrolled past the
+   default window.
+2. If that reveals nothing more, the block scrolled away: the agent draws on
+   the terminal's alternate screen, whose scrolled rows never reach Herdr's
+   scrollback. Do not ask for the same long block again. In one same-unit
+   prompt, ask the agent, without redoing the work, to save its detailed
+   response to a new temporary Markdown file and end with one concise
+   `<HERDR_RESULT>` citing the path, then read that file yourself.
 
-Keep step 4 as a fallback rather than folding it into the handoff. Routing every
-delegation through a file costs an extra round trip and a temporary file to
-solve a problem most units never hit.
+When the block is short but missing or malformed for another reason, such as
+progress output in its place, asking the agent to re-emit only its final result
+is enough. Either request is a same-unit recovery prompt that re-delivers
+finished work, not new investigation or another Explorer round; existing retry
+bounds and the "Waiting" freshness check apply.
 
 ## Waiting
 

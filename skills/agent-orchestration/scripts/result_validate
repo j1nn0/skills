@@ -4,6 +4,7 @@
 import json
 import re
 import sys
+import unicodedata
 
 OPENING_TAG = "<HERDR_RESULT>"
 CLOSING_TAG = "</HERDR_RESULT>"
@@ -30,6 +31,58 @@ def verdict(valid, reason, role=None, field=None, checks=None):
         "field": field,
         "checks": [] if checks is None else checks,
     }
+
+
+
+def terminal_display_width(text):
+    width = 0
+    for character in text:
+        if unicodedata.combining(character):
+            continue
+        if unicodedata.east_asian_width(character) in ("W", "F"):
+            width += 2
+        else:
+            width += 1
+    return width
+
+
+def normalize_display_border(result):
+    lines = result.splitlines(keepends=True)
+    contents = []
+    for line in lines:
+        if line.endswith("\r\n"):
+            contents.append(line[:-2])
+        elif line.endswith(("\n", "\r")):
+            contents.append(line[:-1])
+        else:
+            contents.append(line)
+
+    line_widths = [terminal_display_width(content) for content in contents]
+    bordered_widths = [
+        line_width
+        for content, line_width in zip(contents, line_widths)
+        if content.endswith("│")
+    ]
+    if len(bordered_widths) < 2:
+        return result
+
+    width = bordered_widths[0]
+    if any(line_width != width for line_width in bordered_widths):
+        return result
+    if any(
+        not content.endswith("│") and line_width >= width
+        for content, line_width in zip(contents, line_widths)
+    ):
+        return result
+
+    normalized = []
+    for line, content in zip(lines, contents):
+        if content.endswith("│"):
+            ending = line[len(content) :]
+            content = content[:-1].rstrip(" \t")
+            line = content + ending
+        normalized.append(line)
+    return "".join(normalized)
 
 
 def envelope_body(result):
@@ -106,6 +159,7 @@ def validate(data):
     if not result.strip():
         return verdict(False, "empty_result", role=role)
 
+    result = normalize_display_border(result)
     body, error = envelope_body(result)
     if error is not None:
         return verdict(False, error, role=role)

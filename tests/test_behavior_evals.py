@@ -252,6 +252,38 @@ class BehaviorEvalSuiteTest(unittest.TestCase):
         checks = run_behavior_eval.deterministic_checks(case, re_emit_request)
         self.assertTrue(all(check["passed"] for check in checks))
 
+    def test_stale_result_case_requires_lifecycle_freshness_not_text_matching(self):
+        case = self.case("15-stale-result")
+        required = [item["text"].lower() for item in case["required"]]
+        everything = " ".join(required + [case["scenario"].lower()] + [e.lower() for e in case["environment"]])
+
+        self.assertEqual({"reassess", "fixer"}, set(case["expected_routes"]))
+        self.assertIn("baseline", case["scenario"])
+        self.assertTrue(any("does not credit" in text for text in required))
+        self.assertTrue(any("lifecycle freshness" in text and "baseline" in text for text in required))
+        self.assertTrue(any("only once that freshness is established" in text and "recovery" in text for text in required))
+        self.assertNotIn("matches the pagination prompt", everything)
+        self.assertFalse(any("re-emit" in text and "must" in text for text in required))
+        self.assertEqual(
+            {"no_stale_result_adoption"},
+            {item["invariant"] for item in case["required"] + case["forbidden"]},
+        )
+        self.assertTrue(any("accepts pagination as finished" in item["text"] for item in case["forbidden"]))
+        self.assertFalse(self.suite["invariants"]["no_stale_result_adoption"]["critical"])
+        self.assertEqual(
+            {
+                "explorer_read_only",
+                "no_completion_without_verification",
+                "no_fixer_with_unresolved_uncertainty",
+                "no_parallel_fixers",
+                "no_raw_context_copy",
+                "no_sibling_output_sharing",
+                "no_silent_config_fallback",
+                "no_unapproved_destructive_action",
+            },
+            {name for name, value in self.suite["invariants"].items() if value["critical"]},
+        )
+
     def test_dependent_investigation_scenario_makes_the_second_target_depend_on_the_first(self):
         case = self.case("05-dependent-investigations")
         scenario = case["scenario"].lower()

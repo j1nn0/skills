@@ -1,0 +1,47 @@
+ <HERDR_RESULT>                                                                                                                               │
+ Conclusion: Herdr 0.9.3 exposes two lifecycle metadata fields on every agent record (`.result.agent`, `.result.agents[]`). `state_change_seq`│
+ is a server-process-global, strictly-increasing (+1) uint64 stamped on the agent at each effective state transition; `completion_seq` is     │
+ present (and equal to that transition's `state_change_seq`) only while the agent's current state is a real completion transition —           │
+ `Working→Idle` or `Blocked→Idle`, unsuppressed — and is omitted/cleared otherwise. Both are in-memory only: cleared to None on agent respawn,│
+ and the counter resets to 0 on server restart, so they are monotonic and comparable only within one server process. There is no prompt/turn  │
+ id; `agent prompt --wait` tracks no turns, and its internal freshness gate (`state_change_seq > post-submission baseline`) is applied only to│
+ the transient working/blocked activity check, never to the settled-state match. A freshness check is therefore possible and has a direct     │
+ in-product precedent: baseline `completion_seq`/`state_change_seq` before prompting, then require the post-wait `completion_seq` to be       │
+ present, equal to `state_change_seq`, and strictly greater than the baseline.                                                                │
+ Evidence: DOC — agent-automation.mdx: "Agent responses may include `completion_seq`, identifying the current idle transition as completed    │
+ work independently of who has viewed it. It matches that transition's `state_change_seq`; startup and session changes do not set it."
+ cli-reference.mdx: "With `--wait`, a prompt sent from another non-working state has up to five seconds after submission to produce an
+ observed `working` or `blocked` state or Herdr returns `agent_prompt_stalled` … This prevents unrelated `idle`, `done`, or session changes
+ from completing the wait. … It does not track individual turns. If the agent is already working, completion of that active turn may satisfy
+ the wait." "`idle` and `done` both mean ready for input … `done` is idle but not yet marked seen, explicit `pane focus`/`agent focus` mark
+ the target seen, and reads do not." "`unknown` … not that its work succeeded." socket-api.mdx documents `state_change_seq` only as the "most
+ recent state transition" view sort/filter key. herdr agent prompt --help states the 5000ms rule verbatim. SRC (v0.9.3 tarball, not
+ documented) — src/app/state.rs:831 single `next_agent_state_change_seq: u64`; actions.rs:1721-1727 increments once per effective transition
+ and sets completion_seq = seq iff `is_completion_transition` (Idle from Working|Blocked) and not suppressed, else None;
+ api/schema/agents.rs:219-223 (`state_change_seq: u64` always serialized, `completion_seq: Option<u64>` skipped when None);
+ terminal/state.rs:2339-2340 clears both on respawn; app/mod.rs:488 and state.rs:1057 initialize the counter to 0 and no persist/handoff file
+ references either field; api/wait.rs `agent_wait_matches` = `status ∈ until && state_change_seq > baseline`, with the baseline taken from the
+ post-submission agent read and `after_state_change_seq: None` for the settled wait; client/shell/endpoint_agent_state.rs guards Done via
+ `completions.get(pane_id) == Some(&agent.state_change_seq)` plus an acknowledged-value map. Live read-only checks: 6 agents across two
+ workspaces had distinct seqs 58/60/64/70/72/73; `fixer` idle had completion_seq == state_change_seq == 64; an idle agent existed with
+ completion_seq absent; two consecutive `agent get` calls left seqs unchanged. No turn_id/prompt_id exists in src/api/.
+ Impact: A delegated-agent result cannot be proven fresh from `agent prompt --wait` alone: the settled-state wait accepts any matching status
+ once activity is observed, and if the agent was already `working` before the prompt the activity guard is skipped entirely (documented
+ stale-result path). Fast turns that complete before `working` is observed can even yield `agent_prompt_stalled` despite successful delivery
+ and completion. The two expose-visible sequence fields give an exact, cheap correlation token — `completion_seq` must be present, equal to
+ the current `state_change_seq`, and strictly greater than the pre-prompt baseline — which mirrors how Herdr's own client and wait logic guard
+ completions. Scope limits: sequences are per-server-process only (reset to 0 on server restart, cleared on agent respawn, not persisted, no
+ exposed boot id), so cross-restart and `--machine` comparisons are unsafe; `blocked` advances `state_change_seq` but clears `completion_seq`,
+ so a blocked observation proves activity, not completion.
+ Recommendation: Gate every delegated prompt on a pre-prompt baseline from `herdr agent get` (require `idle`/`done`; capture `terminal_id`,
+ `name`, `agent`, and `B = completion_seq if present else state_change_seq`). After `herdr agent prompt --wait --until idle --until done
+ --timeout …`, take a fresh `agent get` and accept the result only if identity is unchanged, status is `idle`/`done`, and `completion_seq` is
+ present with `completion_seq == state_change_seq > B`. Fail closed otherwise: absent or `≤ B` completion_seq means stale,
+ `agent_prompt_stalled`/`timeout` means inspect before retrying (never blind-retry), and re-baseline on any server restart or machine switch
+ (there is no boot id to compare, so a seq lower than the baseline is the detectable restart symptom). Do not rely on standalone `agent wait`,
+ and document in the skill that no prompt/turn id exists so this sequence check is the only correlation mechanism.
+ Confidence: high — the field definitions, transition rules, reset behavior, and wait-algorithm baseline are confirmed both by the official
+ v0.9.3 docs/CLI help and by the tagged v0.9.3 reference implementation, and are consistent with live read-only `agent list`/`agent get`
+ observations; only the monotonicity-across-restart and per-agent-vs-global distinctions are undocumented, and those are unambiguous in the
+ tagged source.
+ </HERDR_RESULT>

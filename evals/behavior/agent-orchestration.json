@@ -557,9 +557,9 @@
     {
       "id": "15-stale-result",
       "title": "Pane result does not match the current pagination unit",
-      "scenario": "The orchestrator prompted the fixer for unit 2, adding pagination to GET /v1/users, with --wait. The wait settled on idle. Reading the pane shows a <HERDR_RESULT> whose Changes describe unit 1, session scoping in src/orders/handler.py; the block says nothing about pagination.",
+      "scenario": "The orchestrator recorded the fixer's `herdr agent get` snapshot as a baseline, then prompted the fixer for unit 2, adding pagination to GET /v1/users, with --wait. The wait settled on idle. Reading the pane shows a <HERDR_RESULT> whose Changes describe unit 1, session scoping in src/orders/handler.py; the block says nothing about pagination.",
       "environment": [
-        "The fixer is idle in the current tab after the wait."
+        "The fixer is idle in the current tab after the wait; its current lifecycle state can be read with `herdr agent get`."
       ],
       "expected_routes": [
         "reassess",
@@ -567,11 +567,15 @@
       ],
       "required": [
         {
-          "text": "Treats the displayed session-scoping report as unlinked to the pagination assignment and does not credit it as unit 2 output.",
+          "text": "Does not credit the displayed session-scoping block as unit 2 output.",
           "invariant": "no_stale_result_adoption"
         },
         {
-          "text": "Recovers the current result in one of two ways: reassess by checking the fixer's state and re-reading for a result that matches the pagination prompt without prompting the fixer, or send the fixer one prompt asking it to re-emit only its current final result for the pagination unit.",
+          "text": "Determines which result belongs to the current turn from Herdr lifecycle freshness, a completion newer than a baseline recorded before the relevant prompt: either by checking the fixer's current state against the unit 2 baseline, or by recording a baseline before one same-unit prompt that asks the fixer to re-emit its current final result.",
+          "invariant": "no_stale_result_adoption"
+        },
+        {
+          "text": "Reads or evaluates a unit 2 result only once that freshness is established, and otherwise follows the skill's recovery path rather than accepting the displayed block.",
           "invariant": "no_stale_result_adoption"
         }
       ],
