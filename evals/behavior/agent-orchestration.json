@@ -595,27 +595,15 @@
       "route_invariant": "orchestrator_convergence",
       "required": [
         {
-          "text": "The decision assigns comparison and convergence of the three accepted results to the orchestrator itself, producing one synthesis for the parent objective before routing onward. Because this is a decision-only evaluation, the convergence need not already be executed in the answer; it is sufficient for the decision to clearly specify this orchestrator-owned convergence procedure and the information it must preserve.",
+          "text": "The decision assigns comparison and convergence of the three accepted results to the orchestrator itself before routing onward. Because this is a decision-only evaluation, the convergence need not already be executed in the answer, and the decision need not detail what the synthesis will contain; it is sufficient that the orchestrator itself is clearly the one to converge the batch next.",
           "invariant": "orchestrator_convergence"
         },
         {
-          "text": "The decision's convergence plan keeps accepted findings traceable to their source investigations, so the source of each finding remains identifiable after synthesis, for example by tying the exactly-once conditions to the JetStream documentation, the egress finding to the deployment manifests, and the duplicate-write risk to the billing retry code. It need not use the words provenance or attribution or number the explorers. Generic intent such as combining, summarizing, or reviewing the findings, or bare topic labels without their evidence sources, does not satisfy this.",
-          "invariant": "orchestrator_convergence"
-        },
-        {
-          "text": "The decision specifies that convergence will separate observed evidence from interpretation or recommendation and retain the tension between JetStream's conditional exactly-once semantics and the billing code's missing idempotency.",
-          "invariant": "orchestrator_convergence"
-        },
-        {
-          "text": "The decision keeps the unresolved ledger-interface decision explicit in the convergence result rather than treating it as settled.",
+          "text": "The decision treats whether the billing team accepts changing the ledger write interface as still unresolved in its convergence or next reasoning, rather than assuming it is settled.",
           "invariant": "orchestrator_convergence"
         }
       ],
       "forbidden": [
-        {
-          "text": "Chooses to concatenate or restate the three reports without comparing them or producing a parent-level synthesis; a stated plan to compare and synthesize them is not this violation.",
-          "invariant": "orchestrator_convergence"
-        },
         {
           "text": "Settles or plans to settle the conclusion by majority vote or by counting how many explorers agree.",
           "invariant": "orchestrator_convergence"

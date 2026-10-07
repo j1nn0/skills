@@ -293,7 +293,6 @@ class BehaviorEvalSuiteTest(unittest.TestCase):
 
     def test_parallel_convergence_judges_orchestrator_synthesis_after_the_batch(self):
         case = self.case("16-parallel-convergence")
-        required_text = " ".join(item["text"].lower() for item in case["required"])
         forbidden_by_invariant = {item["invariant"]: item["text"].lower() for item in case["forbidden"]}
         reassess_without_prompt = {
             "route": "reassess",
@@ -309,35 +308,42 @@ class BehaviorEvalSuiteTest(unittest.TestCase):
         )
         invariants = self.suite["invariants"]
 
-        self.assertIn("orchestrator_convergence", {item["invariant"] for item in case["required"]})
         self.assertTrue(all(item["text"].lower().startswith("the decision") for item in case["required"]))
-        self.assertIn("decision-only", required_text)
-        self.assertIn("need not already be executed", required_text)
-        for element in ("synthesis", "provenance", "observed evidence", "interpretation", "tension", "unresolved"):
-            self.assertIn(element, required_text)
-        self.assertIn("does not satisfy", next(
-            item["text"].lower() for item in case["required"] if "provenance" in item["text"].lower()
-        ))
+        self.assertTrue(all(item["invariant"] == "orchestrator_convergence" for item in case["required"]))
+        self.assertEqual(2, len(case["required"]))
+        ownership, unresolved = (item["text"].lower() for item in case["required"])
+        self.assertIn("orchestrator itself", ownership)
+        self.assertIn("decision-only", ownership)
+        self.assertIn("need not already be executed", ownership)
+        self.assertIn("ledger write interface", unresolved)
+        self.assertIn("unresolved", unresolved)
         self.assertIn("fixer", forbidden_by_invariant["no_fixer_with_unresolved_uncertainty"])
-        self.assertIn("no_sibling_output_sharing", forbidden_by_invariant)
+        self.assertIn("sibling", forbidden_by_invariant["no_sibling_output_sharing"])
         self.assertTrue(invariants["no_fixer_with_unresolved_uncertainty"]["critical"])
         self.assertTrue(invariants["no_sibling_output_sharing"]["critical"])
+        convergence_forbidden = [
+            item["text"].lower() for item in case["forbidden"] if item["invariant"] == "orchestrator_convergence"
+        ]
+        self.assertTrue(any("majority vote" in text for text in convergence_forbidden))
+        self.assertTrue(any("jev" in text and "which explorer is right" in text for text in convergence_forbidden))
         self.assertEqual(3, case["scenario"].count("<HERDR_RESULT>"))
 
-    def test_parallel_convergence_grades_provenance_by_source_traceability(self):
-        case = self.case("16-parallel-convergence")
-        provenance = [item["text"].lower() for item in case["required"] if "traceable" in item["text"].lower()]
+    def test_parallel_convergence_planning_leaves_output_quality_to_output_cases(self):
+        planning = self.case("16-parallel-convergence")
+        planning_text = " ".join(item["text"].lower() for item in planning["required"] + planning["forbidden"])
 
-        self.assertEqual(1, len(provenance))
-        text = provenance[0]
-        self.assertIn("source", text)
-        for source in ("jetstream documentation", "deployment manifests", "billing retry code"):
-            self.assertIn(source, text)
-        self.assertIn("need not use the words provenance", text)
-        self.assertIn("number the explorers", text)
-        for generic in ("combining", "summarizing", "reviewing"):
-            self.assertIn(generic, text)
-        self.assertIn("does not satisfy", text)
+        for output_quality in ("traceable", "provenance", "observed evidence", "interpretation", "concatenate"):
+            self.assertNotIn(output_quality, planning_text)
+        for case_id in ("17-parallel-convergence-output", "18-parallel-convergence-output-with-reference"):
+            with self.subTest(case=case_id):
+                case = self.case(case_id)
+                required_text = " ".join(item["text"].lower() for item in case["required"])
+                forbidden_text = " ".join(item["text"].lower() for item in case["forbidden"])
+                self.assertEqual("response", run_behavior_eval.evaluation_mode(case))
+                self.assertIn("traceable to its evidence source", required_text)
+                self.assertIn("separates what the evidence shows", required_text)
+                self.assertIn("interpretation or recommendation", required_text)
+                self.assertIn("concatenates", forbidden_text)
 
     def test_existing_cases_stay_in_decision_mode(self):
         for case in self.suite["cases"][:16]:
