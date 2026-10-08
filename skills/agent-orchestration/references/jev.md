@@ -64,7 +64,24 @@ The normalized response contains `schema_version`, `gate`, `mode`, `status`, `ac
 
 ## Shadow mode
 
-Set `mode` to `shadow` to request an observation-only Jev evaluation. The orchestrator first completes its normal work, review, verification, and next-action decision without consulting Jev; it then invokes the gate at most once for an eligible decision and continues with the original decision. The Jev result MUST NOT cause the Orchestrator to revise the decision in shadow mode. Eligibility is unchanged: do not invoke Jev for disabled gates, deterministic failures, incomplete review, or unsafe payloads. The orchestrator—not `jevctl`—compares Jev's action with its own decision; the definitions of `action_match` and `completion_match` are in `SKILL.md`.
+Set `mode` to `shadow` to request an observation-only Jev evaluation. The orchestrator first completes its normal work, review, verification, and next-action decision without consulting Jev; it then invokes the gate at most once for an eligible decision and continues with the original decision. The Jev result MUST NOT cause the Orchestrator to revise the decision in shadow mode. Eligibility is unchanged: do not invoke Jev for disabled gates, deterministic failures, incomplete review, or unsafe payloads. The orchestrator—not `jevctl`—compares Jev's action with its own decision and records `action_match` and `completion_match` with this report template:
+
+```text
+## Jev Shadow
+Orchestrator decision: <action>
+Jev status: <status>
+Jev action: <action>
+next_action_confidence: <value>
+outcome_supported: <value>
+unresolved_issue: <value>
+scope_exceeded: <value>
+completion_confidence: <value>
+would_auto_apply: <bool>
+auto_apply: false
+Agreement:
+action_match: (orchestrator_action==jev_action)
+completion_match: ((both complete) or (both not complete))
+```
 
 Shadow mode creates no telemetry, logs, or extra files. `would_auto_apply` reports what active mode would have done; `auto_apply` remains false. Unavailable Jev results are observational only and do not fail the task.
 

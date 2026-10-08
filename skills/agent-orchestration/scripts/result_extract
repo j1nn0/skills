@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""Extract and validate the final delegated agent result from terminal text."""
+
+import importlib.machinery
+import importlib.util
+import json
+import sys
+from pathlib import Path
+
+OPENING_TAG = "<HERDR_RESULT>"
+CLOSING_TAG = "</HERDR_RESULT>"
+ROLES = ("explorer", "fixer")
+USAGE = "usage: result_extract --role {explorer|fixer}"
+
+
+def load_result_validate():
+    validator_path = Path(__file__).resolve().parent / "result_validate"
+    loader = importlib.machinery.SourceFileLoader(
+        "agent_orchestration_result_validate", str(validator_path)
+    )
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    if spec is None:
+        raise ImportError("unable to load result_validate")
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+def parse_role(args):
+    if len(args) != 2 or args[0] != "--role" or args[1] not in ROLES:
+        return None
+    return args[1]
+
+
+def extract_result(text):
+    opening_index = text.rfind(OPENING_TAG)
+    if opening_index < 0:
+        return None, "missing_result_block"
+
+    closing_index = text.find(CLOSING_TAG, opening_index + len(OPENING_TAG))
+    if closing_index < 0:
+        return None, "truncated_result_block"
+
+    line_start = text.rfind("\n", 0, opening_index) + 1
+    prefix = text[line_start:opening_index]
+    block_start = line_start if not prefix.strip() else opening_index
+    block_end = closing_index + len(CLOSING_TAG)
+    return text[block_start:block_end], None
+
+
+def emit_json(value):
+    print(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+
+
+def main(argv):
+    role = parse_role(argv[1:])
+    if role is None:
+        print(USAGE, file=sys.stderr)
+        return 2
+
+    validator = load_result_validate()
+    raw_text = sys.stdin.read()
+    result, error = extract_result(raw_text)
+    if error is not None:
+        verdict = validator.verdict(False, error, role=role)
+    else:
+        verdict = validator.validate({"role": role, "result": result})
+
+    emit_json({**verdict, "result": result})
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

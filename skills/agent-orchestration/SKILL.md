@@ -55,11 +55,9 @@ If that fails, do the task yourself. Do not run a delegated agent in the orchest
 
 All delegated agents must run in the orchestrator's current tab. Treat `$HERDR_TAB_ID` as a hard placement and reuse boundary.
 
-Role configuration is scoped to the current top-level orchestrator's native Herdr agent session, not to one invocation, request, task, or delegation.
+Read [`startup.md`](references/startup.md) before the first delegation of every invocation, and whenever a role's agent is missing, lives in another tab, has the wrong harness, model, or effort, or needs a pane created. It holds the session-state procedure (starting with `scripts/sessionctl inspect`), agent resolution steps, per-role configuration and start commands, and pane layout.
 
-Before asking the user for configuration, resolve the current orchestrator session by running `skills/agent-orchestration/scripts/sessionctl inspect` and follow [`startup.md`](references/startup.md) to interpret the result. A complete matching persisted configuration is authoritative and is reused without asking again, even when the current context no longer contains the earlier configuration exchange. Ask only when startup.md's session-state policy establishes that no complete configuration is available, then persist the settled values immediately.
-
-Read [`startup.md`](references/startup.md) before the first delegation of every invocation, and whenever a role's agent is missing, lives in another tab, has the wrong harness, model, or effort, or needs a pane created. It holds the session-state procedure, agent resolution steps, per-role configuration and start commands, and pane layout.
+Role configuration is scoped to the current top-level orchestrator's native Herdr agent session, not to one invocation, request, task, or delegation. A complete matching persisted configuration is authoritative and is reused without asking again, even when the current context no longer contains the earlier configuration exchange. Ask the user only when startup.md's session-state policy establishes that no complete configuration is available, then persist the settled values immediately.
 
 ## Workflow
 
@@ -95,7 +93,11 @@ Run the optional Explorer Gate at most once after synthesis (see [`explorer-gate
 ## Handoffs
 
 Delegated agents do not share the orchestrator's conversation. A prompt that
-begins a new agent session must be standalone and assign one role only.
+begins a new agent session must be standalone and assign one role only: name the
+recipient as a delegated `explorer` or `fixer`, not the orchestrator, and state
+that it does its own work and reports back without invoking
+`agent-orchestration`, delegating further, or running Herdr agent or pane
+control commands.
 
 A **unit** is one focused investigation problem or one bounded implementation
 task. Follow-up prompts within the same unit may build on that agent's
@@ -106,10 +108,6 @@ Use "Context routing and unit sizing" before sending a handoff when the work
 may require substantial code exploration, research, implementation, or
 verification. The orchestrator owns the overall task and plan; a delegated agent
 owns only its current unit.
-
-Delegated agents do their own work and report back. They never invoke
-`agent-orchestration`, delegate further, or run Herdr agent or pane control
-commands.
 
 Require every delegated response to end with one `<HERDR_RESULT>` block in the
 format given for that role, and say in the handoff that it is a concise
@@ -223,18 +221,11 @@ fixer.
 
 ### Handoff
 
-Give the explorer:
-
-- that this is investigation only, with no file, state, or environment changes;
-- that it is a delegated explorer, not the orchestrator, and must not invoke
-  `agent-orchestration`, delegate further, or control Herdr agents or panes;
-- the objective;
-- relevant paths, systems, or APIs;
-- constraints;
-- the specific questions to answer.
-
-State the read-only rule in the prompt; without it, an explorer may apply the fix
-it finds and break role separation.
+Build the handoff under "Context contract". The explorer's role boundary is
+investigation only, with no file, state, or environment changes, and its
+required conclusion is the answers to the specific questions you ask. State the read-only rule
+in the prompt; without it, an explorer may apply the fix it finds and break role
+separation.
 
 Require this result format:
 
@@ -308,28 +299,14 @@ when:
 - multiple files or components must change;
 - independent implementation reduces implementation or review risk.
 
-Before delegating a large settled implementation, apply "Context routing and
-unit sizing". A settled strategy does not mean the entire implementation must be
-one fixer unit.
-
 Send unresolved questions to the explorer first.
 
 ### Handoff
 
-Give the fixer:
-
-- that it is a delegated fixer, not the orchestrator, and must not invoke
-  `agent-orchestration`, delegate further, or control Herdr agents or panes;
-- the objective;
-- bounded implementation scope;
-- constraints;
-- the chosen strategy;
-- completion criteria;
-- relevant validated evidence.
-
-For a multi-unit implementation, apply "Context contract".
-
-Let the fixer make local implementation decisions inside those boundaries.
+Build the handoff under "Context contract": the fixer's role boundary is a
+bounded implementation scope, with the chosen strategy, completion criteria,
+and relevant validated evidence. Let the fixer make local implementation
+decisions inside those boundaries.
 
 Require this result format:
 
@@ -391,20 +368,14 @@ End your response with exactly one block in this format and nothing after it:
 
 ### Minimal example
 
-One pass through a delegated cycle looks like this:
+One delegated prompt, for either role, looks like this:
 
 ```bash
-# investigate
-herdr agent get <explorer-name>   # confirm idle; keep as baseline
-herdr agent prompt <explorer-name> '<standalone investigation prompt>' --wait
-herdr agent get <explorer-name>   # freshness check (see "Waiting")
-herdr agent read <explorer-name> --source recent-unwrapped --lines 200
-# evaluate the evidence and decide the strategy yourself
-# implement
-herdr agent get <fixer-name>
-herdr agent prompt <fixer-name> '<standalone implementation prompt>' --wait
-herdr agent get <fixer-name>
-herdr agent read <fixer-name> --source recent-unwrapped --lines 200
+herdr agent get <name>   # confirm idle; keep as baseline
+herdr agent prompt <name> '<standalone prompt>' --wait
+herdr agent get <name>   # freshness check (see "Waiting")
+herdr agent read <name> --source recent-unwrapped --lines 200 \
+  | scripts/result_extract --role <explorer|fixer>
 ```
 
 Then review the result yourself before deciding the next route.
@@ -419,20 +390,14 @@ Restart the same role with its settled harness, model, and effort. Before the fi
 
 ### Reading results
 
-Use only the last complete `<HERDR_RESULT>` block emitted in response to the
-current prompt.
-
-Ignore:
-
-- preceding thinking or progress output;
-- blocks merely echoed from the prompt or quoted as examples;
-- result blocks from earlier prompts or sessions.
-
-Read a result only after the "Waiting" freshness check passes. Before accepting
-the isolated block, pipe `{"role": "explorer" | "fixer",
-"result": "<block>"}` to `scripts/result_validate` and require `valid: true`. It
-checks role-specific structure only; freshness, evidence quality, and
-completion remain yours to validate.
+Read a result only after the "Waiting" freshness check passes. Pipe the read
+output to `scripts/result_extract --role <role>`: it isolates the last complete
+`<HERDR_RESULT>` block in the window, skipping earlier echoed or quoted blocks,
+applies the `result_validate` structural check, and returns the block as
+`result`. Accept only `valid: true`, and confirm the block answers the current
+prompt: a turn that emitted no block leaves an earlier prompt's block last.
+`missing_result_block` and `truncated_result_block` route to the recovery steps
+below. Freshness, evidence quality, and completion remain yours to validate.
 
 Read with `--source recent-unwrapped`. The default `recent` source is
 line-wrapped, so a long result can arrive with its tags and fields broken
@@ -555,42 +520,18 @@ unnecessary access to secrets without explicit permission.
 
 ## Completion lifecycle
 
-### Optional Jev completion gate
+### Optional Jev gates
 
-[`jev.md`](references/jev.md) is authoritative for the optional gate. Run the Completion Gate only after the orchestrator reviews the actual diff and deterministic project verification passes; Jev cannot override deterministic failures, policy, or this skill's invariants. If Jev is disabled, unavailable, invalid, or uncertain, continue the existing workflow conservatively; disabled or unavailable Jev leaves behavior unchanged. Report unavailability concisely without failing the task.
+Jev gates advise; you decide. Read the gate's reference before invoking it; it is authoritative for eligibility, payload, modes, and fallback:
 
-#### Shadow mode
+- the Explorer Gate ([`explorer-gate.md`](references/explorer-gate.md)) runs only after you review and settle Explorer evidence, before implementation;
+- the Completion Gate ([`jev.md`](references/jev.md)) runs only after you review the actual diff and deterministic project verification passes.
 
-In enabled `shadow` mode, work, review, and verify normally, then decide the next action without consulting Jev. Invoke Jev at most once per eligible decision, and only when the gate would genuinely run; never on deterministic failure, incomplete review, or an unsafe payload. Record `action_match` and `completion_match`, then continue with the original decision. **The Jev result MUST NOT cause the Orchestrator to revise the decision in shadow mode.**
+Jev cannot override deterministic failures, policy, or this skill's invariants, and no mode auto-applies. **In `shadow` mode, the Jev result MUST NOT cause the Orchestrator to revise its decision.** In `active` mode, only a decided, confident Explorer Gate `explore_more` may hold the fixer handoff; `proceed_to_fix` is not authorization. When a gate is disabled, unavailable, invalid, or uncertain, continue from your own review or escalate, and report unavailability concisely without failing the task.
 
-Use this report template:
+### Normal completion
 
-```text
-## Jev Shadow
-Orchestrator decision: <action>
-Jev status: <status>
-Jev action: <action>
-next_action_confidence: <value>
-outcome_supported: <value>
-unresolved_issue: <value>
-scope_exceeded: <value>
-completion_confidence: <value>
-would_auto_apply: <bool>
-auto_apply: false
-Agreement:
-action_match: (orchestrator_action==jev_action)
-completion_match: ((both complete) or (both not complete))
-```
-
-### Optional Jev Explorer gate
-
-[`explorer-gate.md`](references/explorer-gate.md) is authoritative for the optional post-Explorer evidence gate. Run it only after the Explorer returns and you have reviewed and settled its evidence. Set `orchestrator_reviewed: true` only after that review. Disabled or incomplete-review gates do not start `cmd`.
-
-In `shadow`, record the result without changing the route. In `active`, only a decided, confident `explore_more` may hold the fixer handoff. `proceed_to_fix` is not authorization; neither mode auto-applies. For invalid, uncertain, or unavailable results, continue from your evidence review or escalate.
-
-The Explorer Gate precedes implementation.
-
-On normal completion:
+After you confirm the completion criteria:
 
 - leave the persisted role configuration intact for the lifetime of the current orchestrator native session;
 - leave correctly configured delegated agents running for reuse;
