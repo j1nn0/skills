@@ -122,112 +122,82 @@ only permitted write.
 
 ## Context routing and unit sizing
 
-The orchestrator owns context routing. A new-unit handoff is a projection of
-settled task state for one working set, not a copy of the conversation or prior
-agent output.
-
-Size delegated work by the **expected working context**, not by prompt length,
-file count, or a fixed token threshold. Prompt size is only a weak proxy: a
-short instruction can force an agent to load several subsystems and long test
-outputs, while a longer instruction can still describe one tightly bounded
-change.
+The orchestrator owns context routing: each new-unit handoff projects the task's
+settled state, not reasoning history, for one working set; it is not a copy of
+the conversation or prior agent output. Size work by **expected working context**,
+not prompt length, file count, or a fixed token threshold; prompt size is only a
+weak proxy.
 
 ### Context contract
 
-Pass **settled state, not reasoning history**. A new-unit handoff includes only
-what can affect the current unit:
+Include only what can affect the current unit:
 
-- the role boundary;
-- the current unit's objective or question, plus the overall objective only
-  when it explains why the unit exists;
-- the current unit's scope, referring to relevant paths, systems, APIs, or
-  interfaces rather than preloading code;
-- current constraints and the cross-unit invariants that constrain this unit;
-- the settled strategy, when delegating implementation;
-- relevant validated evidence, converted from investigation history;
-- the current unit's completion criteria or required conclusion.
+- its role boundary;
+- its objective or question, plus the overall objective only when it explains
+  why the unit exists;
+- scope by relevant paths, systems, APIs, or interfaces rather than preloading
+  code;
+- current constraints and cross-unit invariants;
+- settled strategy when delegating implementation;
+- relevant validated evidence distilled from investigation history;
+- completion criteria or the required conclusion.
 
 Leave out conversation transcripts, raw tool or agent output, repeated findings,
 already-resolved discussion, sibling raw results, and detailed instructions for
-later units. Omit rejected alternatives unless the current unit must avoid a
-specific tempting but unsafe path.
+later units. Omit rejected alternatives and findings unrelated to this unit; do
+not restate them as prohibitions, since naming discarded or unrelated items to
+forbid them still copies them into the handoff. Bound the unit with positive
+scope (what to change) instead. Name a rejected path only when the unit must
+avoid a specific tempting but unsafe path; current constraints still belong in
+the handoff.
 
-A long handoff does not automatically mean the unit is too large; apply this
-contract first. If the handoff is still broad because the agent would need
-several independent working sets, split it.
+A long handoff does not automatically mean the unit is too large: apply this
+contract first, and split if the agent would still need several independent
+working sets.
 
 ### A well-sized unit
 
-Before delegation, confirm that the current unit normally has all of these
-properties:
+Before delegation, confirm that the unit normally has all five properties:
 
-- **one coherent outcome** — the purpose can be stated as one focused outcome,
-  not as several independently useful changes joined together;
+- **one coherent outcome** — one focused outcome; split several independently
+  completable and reviewable outcomes, including mixed work such as an enabling
+  refactor plus a behavior change, a migration plus application adoption, or
+  implementation plus unrelated cleanup;
 - **one cohesive boundary** — the relevant files, components, APIs, or research
-  areas serve the same immediate problem, even if several files are involved;
-- **independent verification** — the unit has a meaningful conclusion or
-  completion check that can be evaluated when the unit finishes;
-- **no detailed future dependency** — the agent does not need the detailed
-  implementation instructions for later units to perform the current one
-  correctly;
-- **focused working set** — the agent does not need to keep several unrelated
-  subsystems, concerns, phases, or large bodies of evidence in active context at
-  once.
+  areas serve one immediate problem, even across several files; split across
+  natural subsystem, package, layer, or phase boundaries when each side has its
+  own meaningful completion condition;
+- **independent verification** — a meaningful completion check when the unit
+  finishes; split if part of the criteria can be satisfied and reviewed before
+  the rest;
+- **no detailed future dependency** — the agent needs no detailed later-unit
+  instructions; split if finishing an earlier part could materially change
+  what the next part should do;
+- **focused working set** — one focused set of context; split if progress would
+  require keeping or exploring several largely independent subsystems, concerns,
+  phases, or bodies of evidence first.
 
-If one of these properties fails because the work contains a natural independent
-boundary, split before delegation. Do not force a task into one unit merely
-because it was originally requested as one task.
-
-### Strong split signals
-
-Prefer multiple ordered units when any of the following is true:
-
-- the handoff contains multiple outcomes that can be completed and reviewed
-  independently;
-- the work crosses natural subsystem, package, layer, or phase boundaries and
-  each side has its own meaningful completion condition;
-- different kinds of work are mixed even though they can be completed
-  separately, such as an enabling refactor plus a behavior change, a migration
-  plus application adoption, or implementation plus unrelated cleanup;
-- completing and verifying an earlier part can materially change what the next
-  part should do;
-- part of the completion criteria can be satisfied and reviewed before the rest;
-- the agent would need detailed later-step requirements that are irrelevant to
-  the code or evidence it is handling now;
-- the agent would have to explore several largely independent areas before it
-  could make progress on any one of them.
-
-Do not split mechanically by number of files, lines, questions, or prompt
-characters. Several files that jointly implement one behavior may be one unit,
-while one file containing multiple independent behavioral changes may require
-several units.
-
-Do not over-fragment tightly coupled work. If splitting would leave an
-intermediate state that cannot be meaningfully verified, would require the same
-context to be rediscovered immediately, or would separate changes that must be
-reasoned about atomically for correctness, keep them in one unit.
+When a property fails at a natural independent boundary, split before delegation;
+do not keep work together merely because it was requested as one task. Do not
+split mechanically by number of files, lines, questions, or prompt characters:
+several files jointly implementing one behavior can be one unit, while one file
+with independent behavioral changes can need several. Do not over-fragment
+tightly coupled work: keep it together when splitting leaves an intermediate
+state that cannot be meaningfully verified, requires the same context to be
+rediscovered immediately, or separates changes that must be reasoned about
+atomically for correctness.
 
 ### Progressive handoff
 
-For a larger task, the orchestrator may maintain an ordered internal plan such
-as:
+For a larger task, keep an ordered internal plan of independently reviewable
+units and delegate only the current unit. Build its handoff under "Context
+contract" rather than preloading every unit's detailed instructions. After a
+unit completes, review its result yourself and use only the validated result as
+input for the next unit; it may confirm, change, merge, split, or eliminate
+later planned units.
 
-```text
-Overall objective
-  Unit 1 -> independently reviewable result
-  Unit 2 -> independently reviewable result
-  Unit 3 -> independently reviewable result
-```
-
-Build each unit's handoff under "Context contract" rather than preloading every
-unit's detailed instructions.
-
-After the unit completes, review its result yourself. Use only the validated
-result as input when constructing the next unit. A completed unit may confirm,
-change, merge, split, or eliminate later planned units.
-
-This makes unit boundaries a context reset mechanism: the orchestrator retains
-task continuity while each delegated agent receives only the working context it
+Unit boundaries are the context reset mechanism: the orchestrator keeps task
+continuity while each delegated agent receives only the working context it
 needs now.
 
 ## Explorer
