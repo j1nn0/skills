@@ -368,14 +368,15 @@ End your response with exactly one block in this format and nothing after it:
 
 ### Minimal example
 
-One delegated prompt, for either role, looks like this:
+One delegated prompt to an agent named `explorer` looks like this; for the
+fixer, use its name and `--role fixer`:
 
 ```bash
-herdr agent get <name>   # confirm idle; keep as baseline
-herdr agent prompt <name> '<standalone prompt>' --wait
-herdr agent get <name>   # freshness check (see "Waiting")
-herdr agent read <name> --source recent-unwrapped --lines 200 \
-  | scripts/result_extract --role <explorer|fixer>
+herdr agent get explorer   # confirm idle; keep as baseline
+herdr agent prompt explorer 'Standalone investigation prompt' --wait
+herdr agent get explorer   # freshness check (see "Waiting")
+herdr agent read explorer --source recent-unwrapped --lines 200 \
+  | scripts/result_extract --role explorer
 ```
 
 Then review the result yourself before deciding the next route.
@@ -391,13 +392,19 @@ Restart the same role with its settled harness, model, and effort. Before the fi
 ### Reading results
 
 Read a result only after the "Waiting" freshness check passes. Pipe the read
-output to `scripts/result_extract --role <role>`: it isolates the last complete
-`<HERDR_RESULT>` block in the window, skipping earlier echoed or quoted blocks,
-applies the `result_validate` structural check, and returns the block as
-`result`. Accept only `valid: true`, and confirm the block answers the current
-prompt: a turn that emitted no block leaves an earlier prompt's block last.
-`missing_result_block` and `truncated_result_block` route to the recovery steps
-below. Freshness, evidence quality, and completion remain yours to validate.
+output to `scripts/result_extract --role explorer` (or `--role fixer`). It
+returns the last complete `<HERDR_RESULT>` block in the window as `result` with
+the `result_validate` structural verdict, and reports `missing_result_block`, or
+`truncated_result_block` when the latest block lost its opening or closing tag,
+for the recovery steps below.
+
+It proves position and structure, not which turn produced the block. Herdr
+output has no turn boundary, and a passing freshness check proves only that a
+newer turn completed, not that any block in the scrollback came from it. A turn
+that emitted no block leaves an earlier prompt's block, or one echoed or quoted
+in your prompt, as the last block. Accept the block only on `valid: true` and
+after you confirm it answers the current prompt; evidence quality and
+completion remain yours to validate.
 
 Read with `--source recent-unwrapped`. The default `recent` source is
 line-wrapped, so a long result can arrive with its tags and fields broken

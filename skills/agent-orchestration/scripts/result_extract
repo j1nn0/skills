@@ -33,18 +33,26 @@ def parse_role(args):
 
 
 def extract_result(text):
+    # Selects by position and tag pairing only: Herdr output carries no turn
+    # boundary, so the caller must confirm the block answers its prompt.
     opening_index = text.rfind(OPENING_TAG)
     if opening_index < 0:
+        if CLOSING_TAG in text:
+            return None, "truncated_result_block"
         return None, "missing_result_block"
 
     closing_index = text.find(CLOSING_TAG, opening_index + len(OPENING_TAG))
     if closing_index < 0:
         return None, "truncated_result_block"
 
+    block_end = closing_index + len(CLOSING_TAG)
+    # A later closing tag belongs to a newer block whose opening scrolled away.
+    if CLOSING_TAG in text[block_end:]:
+        return None, "truncated_result_block"
+
     line_start = text.rfind("\n", 0, opening_index) + 1
     prefix = text[line_start:opening_index]
     block_start = line_start if not prefix.strip() else opening_index
-    block_end = closing_index + len(CLOSING_TAG)
     return text[block_start:block_end], None
 
 

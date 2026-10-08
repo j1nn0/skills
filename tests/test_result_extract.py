@@ -113,6 +113,26 @@ class ResultExtractTest(unittest.TestCase):
         self.assertEqual("explorer", response["role"])
         self.assertIsNone(response["result"])
 
+    def test_newer_block_whose_opening_scrolled_away_is_truncated_not_stale(self):
+        newer_tail = "\nRecommendation: newer\nConfidence: high — newer.\n" + CLOSING_TAG
+        for label, raw_text in (
+            ("after an older complete block", EXPLORER_RESULT + "\nprogress" + newer_tail),
+            ("as the only block", "progress" + newer_tail),
+        ):
+            with self.subTest(label):
+                response = self.parse_response(self.run_extractor("explorer", raw_text))
+                self.assertFalse(response["valid"])
+                self.assertEqual("truncated_result_block", response["reason"])
+                self.assertIsNone(response["result"])
+
+    def test_previous_valid_block_is_returned_because_turns_are_not_visible(self):
+        # Herdr output has no turn boundary, so position and structure are all
+        # the extractor can prove; the orchestrator confirms the turn.
+        raw_text = FIXER_RESULT + "\n> follow-up prompt\nworking\n"
+        response = self.parse_response(self.run_extractor("fixer", raw_text))
+        self.assertTrue(response["valid"])
+        self.assertEqual(FIXER_RESULT, response["result"])
+
     def test_bordered_and_wrapped_tui_result_is_validated(self):
         fixture = (ROOT / "tests" / "fixtures" / "pi_tui_border_explorer_result.txt").read_text(
             encoding="utf-8"

@@ -1,3 +1,5 @@
+import re
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -59,6 +61,22 @@ class ResultTransportTextTest(unittest.TestCase):
         self.assertIn("not new investigation or another Explorer round", short)
         self.assertIn("existing retry bounds", short)
         self.assertIn('"Waiting" freshness check', short)
+
+    def test_extractor_guarantee_leaves_turn_attribution_to_the_orchestrator(self):
+        self.assertIn("It proves position and structure, not which turn produced the block", self.reading)
+        self.assertIn("Herdr output has no turn boundary", self.reading)
+        self.assertIn("not that any block in the scrollback came from it", self.reading)
+        self.assertIn("after you confirm it answers the current prompt", self.reading)
+        self.assertIn("lost its opening or closing tag", self.reading)
+
+    def test_minimal_example_is_valid_shell_without_placeholders(self):
+        example = self.skill.split("\n### Minimal example\n", 1)[1].split("\n### ", 1)[0]
+        script = example.split("```bash\n", 1)[1].split("\n```", 1)[0]
+        syntax = subprocess.run(["bash", "-n"], input=script, capture_output=True, text=True, check=False)
+        self.assertEqual(0, syntax.returncode, syntax.stderr)
+        unquoted = re.sub(r"'[^']*'", "", re.sub(r"#.*", "", script))
+        self.assertNotIn("<", unquoted)
+        self.assertIn("scripts/result_extract --role explorer", script)
 
     def test_result_validate_has_no_size_limit(self):
         import json
