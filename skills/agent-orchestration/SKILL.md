@@ -263,9 +263,8 @@ Give the explorer:
 - constraints;
 - the specific questions to answer.
 
-The read-only instruction has to be in the prompt. An investigation agent that
-was not told to keep its hands off will often "helpfully" apply the fix it found,
-which destroys the separation this skill depends on.
+State the read-only rule in the prompt; without it, an explorer may apply the fix
+it finds and break role separation.
 
 Require this result format:
 
@@ -287,12 +286,12 @@ You are a delegated explorer, not the orchestrator. Do not invoke
 agent-orchestration, delegate work to other agents, or run Herdr agent or pane
 control commands.
 
-You are investigating a defect in the repository at /srv/api. This is a
-read-only investigation: do not edit files, run migrations, or change any
-state. Another agent will implement the fix.
+This is a read-only investigation of a defect in the repository at /srv/api: do
+not edit files, run migrations, or change any state. Another agent implements
+the fix.
 
-Objective: determine why POST /v1/orders intermittently returns 500 under
-concurrent requests.
+Objective: find why POST /v1/orders intermittently returns 500 under concurrent
+requests.
 
 Relevant paths: src/orders/handler.py, src/orders/repository.py,
 src/db/session.py.
@@ -300,11 +299,10 @@ src/db/session.py.
 Constraints: PostgreSQL 16, SQLAlchemy 2.0. Reproduce using the existing test
 suite only. Do not touch the staging database.
 
-Questions to answer:
-1. Which code path produces the 500, and what exception reaches it?
-2. Is the cause session lifecycle, transaction boundaries, or application
-   logic?
-3. Which of those is supported by evidence rather than inference?
+Questions:
+1. Which code path and exception produce the 500?
+2. Is the cause session lifecycle, transaction boundaries, or application logic,
+   and which of those is supported by evidence rather than inference?
 
 Keep the result block to the core findings and key evidence. If supporting
 detail is long, write it to /tmp/<descriptive-name>.md, outside the repository
@@ -312,13 +310,7 @@ and the only file you may write, and cite the path in Evidence.
 
 End your response with exactly one block in this format and nothing after it:
 
-<HERDR_RESULT>
-Conclusion:
-Evidence:
-Impact:
-Recommendation:
-Confidence: high | medium | low — <reason>
-</HERDR_RESULT>
+<the Explorer result format above, verbatim>
 ```
 
 Evidence must cite specific code, files, APIs, or specifications. Prefer primary
@@ -380,10 +372,9 @@ Remaining issues:
 </HERDR_RESULT>
 ```
 
-If the fixer encounters unresolved uncertainty, it must report that uncertainty
-to the orchestrator rather than resolving it by guesswork. Say so in the prompt:
-an implementation agent left to its own devices will usually pick something
-plausible and keep going, and that guess arrives disguised as a finished change.
+Say in the prompt that the fixer must report unresolved uncertainty to the
+orchestrator rather than resolve it by guesswork; otherwise a plausible guess
+can pass as a finished change.
 
 A complete handoff looks like this — the strategy is already decided, and what
 is left open is only the local implementation detail:
@@ -397,39 +388,33 @@ You are implementing a bounded change in the repository at /srv/api.
 
 Objective: make POST /v1/orders safe under concurrent requests.
 
-Validated evidence: src/db/session.py:41 builds one Session at import time and
-shares it across request handlers, so concurrent requests interleave on a
-single transaction. This has been confirmed; treat it as settled.
+Validated evidence (settled): src/db/session.py:41 builds one Session at import
+time and shares it across request handlers, so concurrent requests interleave
+on a single transaction.
 
-Chosen strategy: scope the Session to the request with a per-request
-sessionmaker dependency. Do not add a connection-pool library and do not
-change the ORM layer.
+Chosen strategy: scope the Session to each request with a per-request
+sessionmaker dependency. Do not add a connection-pool library or change the ORM
+layer.
 
-Scope: src/db/session.py and src/orders/handler.py only. Leave
+Scope: src/db/session.py and src/orders/handler.py only; leave
 src/orders/repository.py unchanged.
 
-Constraints: no schema migration, no new dependency, and the public handler
-signature stays as it is.
+Constraints: no schema migration or new dependency; keep the public handler
+signature unchanged.
 
 Completion criteria: pytest tests/orders passes, and
-tests/orders/test_concurrent_post.py fails before your change and passes
-after it.
+tests/orders/test_concurrent_post.py fails before your change and passes after it.
 
-Make the local implementation decisions inside those boundaries yourself. If
-any part of this instruction turns out to be wrong or underdetermined, stop
-and report it instead of guessing.
+Make local implementation decisions inside those boundaries. If any part of
+this instruction turns out to be wrong or underdetermined, stop and report it
+instead of guessing.
 
 Keep the result block to what review needs. Put long logs or details in
 /tmp/<descriptive-name>.md and cite the path in Verification.
 
 End your response with exactly one block in this format and nothing after it:
 
-<HERDR_RESULT>
-Changes:
-Verification:
-- <command>: <result>
-Remaining issues:
-</HERDR_RESULT>
+<the Fixer result format above, verbatim>
 ```
 
 ## Delegation mechanics
@@ -444,11 +429,7 @@ herdr agent get <explorer-name>   # confirm idle; keep as baseline
 herdr agent prompt <explorer-name> '<standalone investigation prompt>' --wait
 herdr agent get <explorer-name>   # freshness check (see "Waiting")
 herdr agent read <explorer-name> --source recent-unwrapped --lines 200
-```
-
-Evaluate the evidence, decide the strategy yourself, then:
-
-```bash
+# evaluate the evidence and decide the strategy yourself
 # implement
 herdr agent get <fixer-name>
 herdr agent prompt <fixer-name> '<standalone implementation prompt>' --wait
@@ -462,9 +443,7 @@ Then review the result yourself before deciding the next route.
 
 Keep an agent's session for the whole unit: remaining questions, missing evidence, a review correction, a test failure caused by the current implementation, and completion of an unfinished part belong to it; repeated corrections stay in the same unit.
 
-A new unit is the normal context-reset boundary for substantial work. Restart so the new unit begins with the standalone handoff constructed from settled state, unless the next work is genuinely still the same unit.
-
-Restart for a materially different problem, another independently reviewable slice of a larger plan, an abandoned strategy, or work that prior context would bias. Do not use a harness-native new-session command when it could fall back to that harness's default model or effort instead of preserving the role's settled configuration.
+A new unit is the normal context-reset boundary for substantial work; restart so it begins with a standalone handoff from settled state, unless the next work is genuinely still the same unit. Also restart for a materially different problem, another independently reviewable slice of a larger plan, an abandoned strategy, or work that prior context would bias. Do not use a harness-native new-session command if it could fall back to the harness's default model or effort instead of preserving the role's settled configuration.
 
 Restart the same role with its settled harness, model, and effort. Before the first prompt of the new unit, verify with `herdr agent get <name>` that the agent is in the current tab and its harness, model, and effort match the settled role configuration. Use [`startup.md`](references/startup.md) §Resolution for the stop, wait-for-shell, restart, and verification procedure.
 
