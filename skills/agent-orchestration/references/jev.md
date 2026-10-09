@@ -24,6 +24,34 @@ fixer report -> diff review -> verification -> orchestrator review -> gate -> co
 
 `scripts/jevctl completion-gate` reads one JSON object from stdin containing `task_summary`, `root_cause_summary`, `implementation_summary`, `changed_files`, `diff_stats`, `verification`, `tests_summary`, `remaining_issues`, `review_findings`, and `deterministic_pass`. It sends only these settled report fields as compact `state`, not extra caller data. The orchestrator sets `deterministic_pass`; Jev is never asked to overrule a failed deterministic check.
 
+The ten fields are all required, with these JSON shapes: `task_summary`, `root_cause_summary`, `implementation_summary`, and `tests_summary` are strings; `changed_files` and `remaining_issues` are string arrays (`[]` when there is nothing to report — the string `"None"` is rejected); `deterministic_pass` is a boolean; `diff_stats` and `review_findings` accept any JSON value. `verification` is an object whose `commands` string array is required, plus at least one of `exit_status` (integer, not boolean), `results` (array or object), or `per_command_results` (array or object); several may be combined. Minimal example:
+
+```json
+{
+  "task_summary": "Fix the discount calculation",
+  "root_cause_summary": "Percentage was treated as a fixed amount",
+  "implementation_summary": "Corrected the calculation",
+  "changed_files": [
+    "pricing.py"
+  ],
+  "diff_stats": {
+    "files_changed": 1
+  },
+  "verification": {
+    "commands": [
+      "python3 -B -m unittest"
+    ],
+    "exit_status": 0
+  },
+  "tests_summary": "2 tests passed",
+  "remaining_issues": [],
+  "review_findings": [],
+  "deterministic_pass": true
+}
+```
+
+Set `deterministic_pass: true` only after the orchestrator's own diff review and deterministic verification pass; build every value from verified facts, since the example shows structure rather than content.
+
 The state is capped by `JEVCTL_MAX_STATE_CHARS` (default `12000` characters) and truncated with a marker. This deliberately conservative cap leaves room for the questions and reduces the chance of approaching the model budget; character count is not an exact token count. TypeSafe's input-token budgets are 64k for state plus all questions combined, and 32k for state plus the single longest question. Both budgets count encoded input tokens, so keep the full request below both limits.
 
 Callers must not send secrets, credentials, API keys, tokens, authorization headers, raw transcripts, full-repository contents, or unrelated history. Authentication comes from the logged-in Command Code `cmd` session (`cmd login`); the gate does not access the credential file or forward credential variables. `CMD_ZDR`, when set, is forwarded unchanged to `cmd`. The child environment otherwise remains limited to runtime essentials. Command stderr is captured and never copied into stdout or response reasons.

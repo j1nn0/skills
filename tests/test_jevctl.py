@@ -731,6 +731,44 @@ class JevctlTest(unittest.TestCase):
         finally:
             module.doctor_result = original_doctor
 
+    def test_jev_reference_completion_example_passes_validation(self):
+        import re
+
+        reference = (
+            ROOT / "skills" / "agent-orchestration" / "references" / "jev.md"
+        ).read_text(encoding="utf-8")
+        payload = None
+        for block in re.findall(r"```json\n(.*?)```", reference, re.DOTALL):
+            value = json.loads(block)
+            if isinstance(value, dict) and "deterministic_pass" in value:
+                payload = value
+        self.assertIsNotNone(payload)
+
+        import importlib.machinery
+
+        loader = importlib.machinery.SourceFileLoader(
+            "jevctl_reference_check", str(JEVCTL)
+        )
+        spec = importlib.util.spec_from_loader("jevctl_reference_check", loader)
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+        summary = module.validate_gate_input(payload)
+        self.assertEqual(
+            {
+                "task_summary",
+                "root_cause_summary",
+                "implementation_summary",
+                "changed_files",
+                "diff_stats",
+                "verification",
+                "tests_summary",
+                "remaining_issues",
+                "review_findings",
+                "deterministic_pass",
+            },
+            set(summary),
+        )
+
 
 class ExplorerGateTest(unittest.TestCase):
     install_cmd = JevctlTest.install_cmd
