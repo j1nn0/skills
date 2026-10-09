@@ -14,6 +14,7 @@ class TriggerEvalTest(unittest.TestCase):
             "blog-ops",
             "blog-idea-grilling",
             "fact-check-ja",
+            "assumption-expiry-audit",
         }
         self.assertEqual(optimization_scope, {path.stem for path in EVALS.glob("*.json")})
         for path in EVALS.glob("*.json"):

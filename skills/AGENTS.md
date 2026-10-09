@@ -21,6 +21,7 @@ No standalone files are expected here. Put each skill's entry point in its own `
 | `blog-ops/` | Entry-point skill for Hugo blog operations: routes to planning/writing/fact-checking skills, new-post setup, post revision, pre-publish checks, tag management, and repo conventions. |
 | `agent-orchestration/` | Delegates non-trivial engineering work in a Herdr session: the current agent keeps strategy and review, Pi `explorer` investigates and researches, and Pi `fixer` implements. Use it when a root cause is unclear, code or architecture is unfamiliar, an external API, SDK, or specification needs research, or an implementation spans several files. Requires HERDR_ENV=1; builds on the herdr skill. Startup and recovery detail live in the skill's `startup.md` and `recovery.md`. |
 | `continuous-improvement-loop/` | Runs reviewable autonomous engineering-improvement rounds until the repository converges. Reassesses and selects one improvement per round, then uses `agent-orchestration` for rounds that warrant delegation. |
+| `assumption-expiry-audit/` | Audits whether previously accepted engineering assumptions still hold: a read-only checker reports local drift since a recorded baseline, and the agent assigns an evidence-backed verdict (valid, recheck required, invalid, unknown). Record schema and verdict rules live in the skill's `references/`. |
 
 ## For AI Agents
 

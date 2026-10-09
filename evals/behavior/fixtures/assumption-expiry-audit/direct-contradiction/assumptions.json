@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "assumptions": [
+    {
+      "id": "no-redis-backed-queue",
+      "statement": "The application does not use a Redis-backed queue.",
+      "scope": "production background job processing",
+      "evidence": [
+        {
+          "kind": "file",
+          "path": "config/queue.yml",
+          "pattern": "driver:\\s*sync",
+          "description": "Queue driver configuration"
+        },
+        {
+          "kind": "file",
+          "path": "package.json",
+          "description": "Dependency manifest"
+        },
+        {
+          "kind": "file",
+          "path": "workers/jobs.js",
+          "description": "Background worker implementation"
+        }
+      ],
+      "baseline": {
+        "files": {
+          "config/queue.yml": "sha256:071482e7426ed78af5eb0d381cb99d4f400329155e14872833800e1c6536dfc7",
+          "package.json": "sha256:f13101330c4b3b4128eca50d5e839f320e806a231e0e09fb7f40dec5e8d56405",
+          "workers/jobs.js": "sha256:32c82634e7976d34ddf2c1be5170ecaf0f013465788701a13bd2a31be59e221c"
+        }
+      }
+    }
+  ]
+}

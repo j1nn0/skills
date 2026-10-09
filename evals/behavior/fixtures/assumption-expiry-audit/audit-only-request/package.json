@@ -1,0 +1,4 @@
+{
+  "name": "build-runner",
+  "engines": {"node": ">=22"}
+}

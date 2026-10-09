@@ -17,6 +17,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 ROUTES = (
     "direct",
     "explorer",
@@ -64,6 +65,27 @@ def validate_suite(suite):
     if "decision_context" in suite and not isinstance(suite["decision_context"], str):
         errors.append("decision_context must be a str")
 
+    suite_axes = AXES
+    if "axes" in suite:
+        declared_axes = suite["axes"]
+        if (
+            not isinstance(declared_axes, list)
+            or not declared_axes
+            or not all(isinstance(axis, str) and axis.strip() for axis in declared_axes)
+        ):
+            errors.append("axes must be a non-empty list of unique non-empty strings")
+        else:
+            if len(declared_axes) != len(set(declared_axes)):
+                errors.append("axes must contain unique values")
+            suite_axes = declared_axes
+
+    cases = suite.get("cases")
+    has_decision_case = isinstance(cases, list) and any(
+        isinstance(case, dict)
+        and case.get("evaluation_mode", DEFAULT_EVALUATION_MODE) == "decision"
+        for case in cases
+    )
+
     invariants = suite.get("invariants")
     known_invariants = set()
     if isinstance(invariants, dict):
@@ -75,19 +97,20 @@ def validate_suite(suite):
             if not isinstance(definition, dict):
                 errors.append(f"{label} must be an object")
                 continue
-            if definition.get("axis") not in AXES:
+            axis = definition.get("axis")
+            if not isinstance(axis, str) or axis not in suite_axes:
                 errors.append(f"{label} has an invalid axis")
             if not isinstance(definition.get("critical"), bool):
                 errors.append(f"{label} critical must be a boolean")
             if not isinstance(definition.get("description"), str) or not definition["description"].strip():
                 errors.append(f"{label} description must be a non-empty string")
-        for invariant_id in ("correct_route", "handoff_shape"):
-            if invariant_id not in invariants:
-                errors.append(f"invariants must define {invariant_id}")
+        if has_decision_case:
+            for invariant_id in ("correct_route", "handoff_shape"):
+                if invariant_id not in invariants:
+                    errors.append(f"invariants must define {invariant_id}")
     else:
         known_invariants = set()
 
-    cases = suite.get("cases")
     if isinstance(cases, list):
         if not cases:
             errors.append("cases must be non-empty")
@@ -125,6 +148,7 @@ def validate_suite(suite):
                 errors.extend(_decision_case_errors(case, case_label, known_invariants))
 
             errors.extend(_required_reference_errors(case, case_label))
+            errors.extend(_fixture_errors(case, case_label))
 
             expectation_count = 0
             for collection_name in ("required", "forbidden"):
@@ -161,6 +185,24 @@ def _required_reference_errors(case, case_label):
         if path is None or not reference.strip() or path.is_absolute() or ".." in path.parts:
             errors.append(f"{case_label} required_references must contain relative paths inside the skill")
     return errors
+
+
+def _fixture_errors(case, case_label):
+    """Return validation errors for an optional fixture repository path."""
+    if "fixture" not in case:
+        return []
+    fixture = case["fixture"]
+    path = Path(fixture) if isinstance(fixture, str) else None
+    if path is None or not fixture.strip() or path.is_absolute() or ".." in path.parts:
+        return [f"{case_label} fixture must be a relative directory under evals/behavior/fixtures"]
+    try:
+        resolved = (FIXTURES_DIR / path).resolve(strict=True)
+        resolved.relative_to(FIXTURES_DIR.resolve())
+    except (OSError, RuntimeError, ValueError):
+        return [f"{case_label} fixture must exist as a directory under evals/behavior/fixtures"]
+    if not resolved.is_dir():
+        return [f"{case_label} fixture must exist as a directory under evals/behavior/fixtures"]
+    return []
 
 
 def missing_required_references(skill_path, cases):
@@ -274,6 +316,13 @@ def _required_reference_instruction(skill_directory_name, case):
     )
 
 
+def _fixture_prompt_instruction(case):
+    """Tell the model where an optional fixture repository is mounted."""
+    if not case.get("fixture"):
+        return ""
+    return " The fixture repository is at `repo/` relative to the working directory."
+
+
 def _scenario_prompt(context, skill_text, skill_directory_name, case, purpose):
     """Build the shared prompt sections up to the scenario, without rubric expectations."""
     environment = "\n".join(f"- {assumption}" for assumption in case["environment"])
@@ -311,7 +360,7 @@ def build_response_prompt(context, skill_text, skill_directory_name, case):
         "inspect the skill instructions, its reference files, or other read-only context needed for the "
         "response. Reasoning about the supplied evidence and writing the completed answer or synthesis in "
         "`response` is expected. Return only a JSON object matching the provided schema."
-    )
+    ) + _fixture_prompt_instruction(case)
 
 
 def build_decision_prompt(context, skill_text, skill_directory_name, case):
@@ -323,7 +372,7 @@ def build_decision_prompt(context, skill_text, skill_directory_name, case):
         "change state. For each delegated agent, `handoffs` must contain the full standalone prompt that would "
         "be sent to that agent. Use an empty `user_message` string when no user-facing message is needed. "
         "Return only a JSON decision matching the provided schema."
-    )
+    ) + _fixture_prompt_instruction(case)
 
 
 def build_model_prompt(context, skill_text, skill_directory_name, case):
@@ -720,6 +769,12 @@ def run_case_once(
                 copied_skill,
                 ignore=shutil.ignore_patterns("__pycache__"),
             )
+            if case.get("fixture"):
+                shutil.copytree(
+                    FIXTURES_DIR / case["fixture"],
+                    workspace / "repo",
+                    ignore=shutil.ignore_patterns("__pycache__"),
+                )
             response_mode = evaluation_mode(case) == "response"
             model_prompt = build_model_prompt(context, skill_text, skill_path.name, case)
             payload = codex_runner(
@@ -775,7 +830,7 @@ def run_case_once(
             **_trace_fields(case, commands, skill_path),
         }
 
-    failed_items = [item for item in checks + graded_expectations if not item["passed"]]
+    failed_items =[item for item in checks + graded_expectations if not item["passed"]]
     violated_invariants = list(dict.fromkeys(item["invariant"] for item in failed_items))
     passed = not failed_items
     return {
@@ -804,13 +859,13 @@ def build_case_result(case, runs):
     }
 
 
-def summarize_results(case_results, invariants):
+def summarize_results(case_results, invariants, axes=None):
     """Summarize runs, axes, cases, and failed critical invariants."""
     all_runs = [run for case in case_results for run in case["runs"]]
     errored = sum(run["error"] is not None for run in all_runs)
     passed = sum(run["pass"] for run in all_runs)
     failed = len(all_runs) - passed - errored
-    by_axis = {axis: {"passed": 0, "failed": 0} for axis in AXES}
+    by_axis = {axis: {"passed": 0, "failed": 0} for axis in (AXES if axes is None else axes)}
     critical_violations = {}
     for run in all_runs:
         for item in run["checks"] + run["expectations"]:
@@ -998,7 +1053,7 @@ def main(argv=None):
             collected[case["id"]].append(run_result)
 
     case_results = [build_case_result(case, collected[case["id"]]) for case in selected_cases]
-    summary = summarize_results(case_results, suite["invariants"])
+    summary = summarize_results(case_results, suite["invariants"], suite.get("axes", AXES))
     metadata = {
         "evaluator": "codex-exec-behavior-rubric",
         "isolated_home": True,

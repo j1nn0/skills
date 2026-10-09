@@ -1,0 +1,4 @@
+{
+  "name": "api-service",
+  "dependencies": {"bullmq": "^5.0.0", "ioredis": "^5.0.0"}
+}

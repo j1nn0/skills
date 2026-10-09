@@ -1,0 +1,4 @@
+{
+  "name": "image-service",
+  "dependencies": {"pixelpipe": "^4.3.0"}
+}

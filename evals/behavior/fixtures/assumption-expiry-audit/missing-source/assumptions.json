@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "assumptions": [
+    {
+      "id": "invoice-ids-monotonic",
+      "statement": "Invoice identifiers increase monotonically within each account.",
+      "scope": "invoice creation in the billing service",
+      "evidence": [
+        {
+          "kind": "file",
+          "path": "docs/invoice-id-policy.md",
+          "description": "Recorded rationale for invoice identifiers"
+        }
+      ],
+      "baseline": {
+        "files": {
+          "docs/invoice-id-policy.md": "sha256:e3aa719b3219888414a109a989026c426fbc6559653edc9f316040acf37cf75c"
+        }
+      }
+    }
+  ]
+}

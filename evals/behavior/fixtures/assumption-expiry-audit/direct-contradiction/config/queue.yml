@@ -1,0 +1,2 @@
+driver: redis
+redis_url: redis://queue.internal:6379/0

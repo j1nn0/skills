@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "assumptions": [
+    {
+      "id": "expired-sessions-rejected",
+      "statement": "The API rejects expired session tokens before authorizing requests.",
+      "scope": "API request authentication in the current service",
+      "evidence": [
+        {
+          "kind": "file",
+          "path": "src/auth/session.py",
+          "pattern": "raise Unauthorized"
+        },
+        {
+          "kind": "file",
+          "path": "src/auth/middleware.py",
+          "pattern": "authorize\\(session, now\\)",
+          "description": "Request middleware validates a session before invoking the protected handler"
+        }
+      ],
+      "baseline": {
+        "files": {
+          "src/auth/middleware.py": "sha256:cdf344090f63e49f7e74e41079c77f861cdf3b05c5d573ab4bfa170e9c5cd7e0",
+          "src/auth/session.py": "sha256:9a94175c77d1b65da4b7f49ae860dfd8d300afdcfc7bfaf0a2114a5f38ee02e0"
+        }
+      }
+    }
+  ]
+}

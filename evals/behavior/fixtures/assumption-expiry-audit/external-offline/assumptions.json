@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "assumptions": [
+    {
+      "id": "refresh-token-rotation-required",
+      "statement": "The OAuth 2.0 Security Best Current Practice requires public clients to use sender-constrained refresh tokens or refresh-token rotation.",
+      "scope": "public OAuth 2.0 clients",
+      "evidence": [
+        {
+          "kind": "url",
+          "url": "https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14",
+          "description": "RFC 9700, Section 4.14, Refresh Tokens"
+        },
+        {
+          "kind": "file",
+          "path": "client/session.json",
+          "description": "Local session client settings"
+        }
+      ],
+      "baseline": {
+        "files": {
+          "client/session.json": "sha256:28332cbdd3a54a10da62cbc6db6b7ab3adc0f332c9c32457ef1e869714cd32c8"
+        }
+      }
+    }
+  ]
+}

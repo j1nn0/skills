@@ -1,0 +1,22 @@
+[
+  {"query":"半年前に『pg 8.11 はパイプライン非対応だから手動トランザクションでバッチ挿入する』と決めた。先週 pg を 8.13 に上げたので、この前提がまだ成り立つか確認したい。コードはまだ変えないで。", "should_trigger":true},
+  {"query":"docs/assumptions.json に記録してある前提のうち、v2.4.0 タグ以降の変更で見直しが必要になったものを洗い出して。", "should_trigger":true},
+  {"query":"ADR-0007 で『Redis キューは不要、ジョブはプロセス内で十分』としたけど、その後 config/queue.yml や worker 周りをかなり触った。当時の判断の前提が今も有効か監査して。", "should_trigger":true},
+  {"query":"Node 18 から 22 に上げた。src/compat/ にある fetch の polyfill は『Node 18 の fetch がストリーミングに対応していない』のが理由で入れたはず。まだ必要か根拠付きで判断して。削除はしないで。", "should_trigger":true},
+  {"query":"本番の設定が当初の想定からずれていないか見てほしい。セッションは単一リージョン前提で設計したけど、infra/ 配下の設定をいろんな人が触っている。", "should_trigger":true},
+  {"query":"『Safari が structuredClone 非対応だから自前のディープコピーを使う』というコメントがあちこちにある。この制約がもう解消されているか、前提として監査して。", "should_trigger":true},
+  {"query":"このリポジトリの設計ドキュメントにある『〜を前提とする』という記述を、今のコードと依存関係に照らして古くなっていないか棚卸ししたい。", "should_trigger":true},
+  {"query":"認証フローは『アクセストークンは必ずサーバー側で検証される』という前提で組んである。最近ミドルウェアの構成を変えたので、その前提がまだ保証されているか確かめて。", "should_trigger":true},
+  {"query":"lockfile の更新で間接依存の protobufjs が上がったみたい。『protobufjs 6 系は Node 22 と非互換』という理由でピン留めしていた件、もう外せる条件になったか評価してほしい。", "should_trigger":true},
+  {"query":"2年前のアーキテクチャ判断『GraphQL ではなく REST にしたのは当時のクライアントがバッチリクエストを扱えなかったから』が、今の構成でも理由として通用するか、当時の条件と分けて検証して。", "should_trigger":true},
+  {"query":"ユーザー一覧 API にページネーションを追加して。cursor 方式で。", "should_trigger":false},
+  {"query":"この PR をレビューして。命名と例外処理が気になる。", "should_trigger":false},
+  {"query":"新規プロジェクトでジョブキューを入れたい。BullMQ と Graphile Worker のどっちがいいか比較して。", "should_trigger":false},
+  {"query":"Node 22 の新機能を紹介するブログ記事を書きたい。構成案を作って。", "should_trigger":false},
+  {"query":"記事に『Node 22 では fetch がデフォルトで有効』と書いたけど、公式ドキュメントで裏を取ってほしい。", "should_trigger":false},
+  {"query":"README の誤字を直して、インストール手順を最新化して。", "should_trigger":false},
+  {"query":"本番だけ 502 が出る。ログを見て原因を特定して直して。", "should_trigger":false},
+  {"query":"依存パッケージを全部最新に上げて、テストが通るようにして。", "should_trigger":false},
+  {"query":"この関数のテストが flaky なので原因を調べて。", "should_trigger":false},
+  {"query":"React 19 の use フックの使い方を教えて。", "should_trigger":false}
+]

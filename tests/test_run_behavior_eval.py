@@ -683,5 +683,169 @@ class RunBehaviorEvalTest(unittest.TestCase):
                 self.assertEqual(2, error.exception.code)
 
 
+    def test_suite_axes_are_optional_unique_non_empty_and_used_for_summary(self):
+        suite = synthetic_suite()
+        suite["axes"] = ["quality"]
+        for invariant in suite["invariants"].values():
+            invariant["axis"] = "quality"
+        self.assertEqual([], run_behavior_eval.validate_suite(suite))
+
+        custom_summary = run_behavior_eval.summarize_results(
+            [
+                {
+                    "id": "case",
+                    "pass": True,
+                    "runs": [
+                        {
+                            "error": None,
+                            "pass": True,
+                            "checks": [],
+                            "expectations": [{"invariant": "required_behavior", "passed": True}],
+                        }
+                    ],
+                }
+            ],
+            suite["invariants"],
+            suite["axes"],
+        )
+        self.assertEqual({"quality": {"passed": 1, "failed": 0}}, custom_summary["by_axis"])
+        self.assertEqual(set(run_behavior_eval.AXES), set(run_behavior_eval.summarize_results([], {})["by_axis"]))
+
+        for axes in ([], ["quality", "quality"], [" "], ["quality", 1], None):
+            with self.subTest(axes=axes):
+                invalid = copy.deepcopy(suite)
+                invalid["axes"] = axes
+                self.assertTrue(
+                    any("axes must" in error for error in run_behavior_eval.validate_suite(invalid))
+                )
+
+        invalid_axis = copy.deepcopy(suite)
+        invalid_axis["invariants"]["correct_route"]["axis"] = "routing"
+        self.assertIn(
+            "invariant 'correct_route' has an invalid axis",
+            run_behavior_eval.validate_suite(invalid_axis),
+        )
+
+    def test_response_only_suite_does_not_require_decision_invariants(self):
+        suite = synthetic_suite()
+        suite["cases"] = [response_case_fixture()]
+        del suite["invariants"]["correct_route"]
+        del suite["invariants"]["handoff_shape"]
+        self.assertEqual([], run_behavior_eval.validate_suite(suite))
+
+        suite["cases"] = [synthetic_suite()["cases"][0]]
+        errors = run_behavior_eval.validate_suite(suite)
+        self.assertIn("invariants must define correct_route", errors)
+        self.assertIn("invariants must define handoff_shape", errors)
+
+    def test_fixture_validation_prompt_copy_and_setup_failure(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            fixture_root = Path(temporary_directory) / "fixtures"
+            fixture_repo = fixture_root / "sample"
+            (fixture_repo / "__pycache__").mkdir(parents=True)
+            (fixture_repo / "sentinel.txt").write_text("fixture-only payload", encoding="utf-8")
+            (fixture_repo / "__pycache__" / "ignored.pyc").write_bytes(b"ignored")
+            original_fixture_root = run_behavior_eval.FIXTURES_DIR
+            run_behavior_eval.FIXTURES_DIR = fixture_root
+            try:
+                suite = synthetic_suite()
+                case = response_case_fixture()
+                case["fixture"] = "sample"
+                suite["cases"] = [case]
+                self.assertEqual([], run_behavior_eval.validate_suite(suite))
+                prompt = run_behavior_eval.build_model_prompt(
+                    suite["context"], "Skill text.", "synthetic-skill", case
+                )
+                self.assertTrue(
+                    prompt.endswith("The fixture repository is at `repo/` relative to the working directory.")
+                )
+                self.assertNotIn("fixture-only payload", prompt)
+                self.assertNotIn("private response expectation", prompt)
+
+                decision_case = copy.deepcopy(synthetic_suite()["cases"][0])
+                decision_case["fixture"] = "sample"
+                decision_prompt = run_behavior_eval.build_model_prompt(
+                    suite["context"], "Skill text.", "synthetic-skill", decision_case
+                )
+                self.assertTrue(
+                    decision_prompt.endswith("The fixture repository is at `repo/` relative to the working directory.")
+                )
+
+                calls = []
+
+                def fake_codex(prompt, schema, model, effort, cwd, timeout, trace=None):
+                    calls.append(prompt)
+                    if "response" in schema["properties"]:
+                        self.assertEqual(
+                            "fixture-only payload",
+                            (cwd / "repo" / "sentinel.txt").read_text(encoding="utf-8"),
+                        )
+                        self.assertFalse((cwd / "repo" / "__pycache__").exists())
+                        self.assertIn("fixture repository is at `repo/`", prompt)
+                        return {"response": "A response grounded in the repository."}
+                    return {
+                        "required": [{"id": "required-1", "satisfied": True, "evidence": "Repository evidence."}],
+                        "forbidden": [],
+                    }
+
+                result = run_behavior_eval.run_case_once(
+                    case,
+                    suite["invariants"],
+                    Path(__file__).parents[1] / "skills" / "agent-orchestration",
+                    suite["context"],
+                    "test-model",
+                    "low",
+                    "grader-model",
+                    "medium",
+                    15,
+                    codex_runner=fake_codex,
+                )
+                self.assertTrue(result["pass"])
+                self.assertEqual(2, len(calls))
+
+                missing = copy.deepcopy(case)
+                missing["fixture"] = "does-not-exist"
+                failed = run_behavior_eval.run_case_once(
+                    missing,
+                    suite["invariants"],
+                    Path(__file__).parents[1] / "skills" / "agent-orchestration",
+                    suite["context"],
+                    "test-model",
+                    "low",
+                    "grader-model",
+                    "medium",
+                    15,
+                    codex_runner=lambda *args, **kwargs: self.fail("model must not run after fixture copy fails"),
+                )
+                self.assertFalse(failed["pass"])
+                self.assertIn("model call failed", failed["error"])
+            finally:
+                run_behavior_eval.FIXTURES_DIR = original_fixture_root
+
+    def test_fixture_paths_must_be_relative_existing_directories(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            fixture_root = Path(temporary_directory)
+            (fixture_root / "present").mkdir()
+            (fixture_root / "file.txt").write_text("not a directory", encoding="utf-8")
+            original_fixture_root = run_behavior_eval.FIXTURES_DIR
+            run_behavior_eval.FIXTURES_DIR = fixture_root
+            try:
+                suite = synthetic_suite()
+                case = response_case_fixture()
+                suite["cases"] = [case]
+                for fixture in ("", " ", "../escape", "/absolute", "missing", "file.txt"):
+                    with self.subTest(fixture=fixture):
+                        bad = copy.deepcopy(suite)
+                        bad["cases"][0]["fixture"] = fixture
+                        self.assertTrue(
+                            any("fixture" in error for error in run_behavior_eval.validate_suite(bad))
+                        )
+                good = copy.deepcopy(suite)
+                good["cases"][0]["fixture"] = "present"
+                self.assertEqual([], run_behavior_eval.validate_suite(good))
+            finally:
+                run_behavior_eval.FIXTURES_DIR = original_fixture_root
+
+
 if __name__ == "__main__":
     unittest.main()

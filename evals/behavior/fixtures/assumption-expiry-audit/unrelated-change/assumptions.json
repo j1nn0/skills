@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "assumptions": [
+    {
+      "id": "signed-session-cookie",
+      "statement": "Session cookies are signed before they are sent to the browser.",
+      "scope": "the web session middleware",
+      "evidence": [
+        {
+          "kind": "file",
+          "path": "config/session.yml",
+          "pattern": "signed:\\s*true"
+        }
+      ],
+      "baseline": {
+        "files": {
+          "config/session.yml": "sha256:caf72188a1ce73daefa3efbf57cd3beea1494602ba4335a47166597be48c959a"
+        }
+      }
+    }
+  ]
+}

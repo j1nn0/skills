@@ -1,0 +1,177 @@
+{
+  "skill": "assumption-expiry-audit",
+  "context": "You are an agent using the assumption-expiry-audit skill to audit recorded engineering assumptions. The skill's checker `python3 skills/assumption-expiry-audit/scripts/check_assumptions.py` is read-only and may be run against `repo/`. Network access is unavailable unless a case says otherwise.",
+  "axes": [
+    "verdict_correctness",
+    "evidence_traceability",
+    "false_positive_resistance",
+    "unsupported_claim_avoidance",
+    "scope_preservation",
+    "detection_judgment_separation"
+  ],
+  "invariants": {
+    "verdict_correctness": {
+      "axis": "verdict_correctness",
+      "critical": false,
+      "description": "Assign a supported verdict from valid, recheck_required, invalid, or unknown under the recorded conditions."
+    },
+    "evidence_traceability": {
+      "axis": "evidence_traceability",
+      "critical": false,
+      "description": "Cite the observed paths, checker signals, or exact external source behind each verdict."
+    },
+    "false_positive_resistance": {
+      "axis": "false_positive_resistance",
+      "critical": true,
+      "description": "Do not treat file changes or missing evidence alone as proof that an assumption is invalid."
+    },
+    "unsupported_claim_avoidance": {
+      "axis": "unsupported_claim_avoidance",
+      "critical": true,
+      "description": "Do not claim offline external verification or reconstruct authoritative external facts from memory."
+    },
+    "scope_preservation": {
+      "axis": "scope_preservation",
+      "critical": true,
+      "description": "Keep historical applicability separate from current applicability and honor audit-only limits without modifying state."
+    },
+    "detection_judgment_separation": {
+      "axis": "detection_judgment_separation",
+      "critical": false,
+      "description": "Report checker detection as an observation and explain the evidence-based judgment separately."
+    }
+  },
+  "cases": [
+    {
+      "id": "unchanged-supported",
+      "title": "Unchanged local evidence supports an assumption",
+      "evaluation_mode": "response",
+      "fixture": "assumption-expiry-audit/unchanged-supported",
+      "required_references": ["references/assumption-model.md", "references/verification-rules.md"],
+      "scenario": "Audit the recorded assumption that the API rejects expired session tokens before authorizing requests. Inspect its current local evidence and report whether it still holds.",
+      "environment": ["The repository is available at repo/; do not modify it."],
+      "required": [
+        {"text": "Gives the verdict `valid` only with positive current local evidence, citing `src/auth/session.py`.", "invariant": "verdict_correctness"},
+        {"text": "Identifies the unchanged baseline/checker observation separately from the source-code evidence and interpretation.", "invariant": "detection_judgment_separation"},
+        {"text": "Names the source path for the fact supporting the verdict.", "invariant": "evidence_traceability"}
+      ],
+      "forbidden": [
+        {"text": "Treats an `unchanged` checker status alone as proof that the assumption is true.", "invariant": "detection_judgment_separation"}
+      ]
+    },
+    {
+      "id": "dependency-changed",
+      "title": "Offline dependency capability needs rechecking",
+      "evaluation_mode": "response",
+      "fixture": "assumption-expiry-audit/dependency-changed",
+      "required_references": ["references/assumption-model.md", "references/verification-rules.md"],
+      "scenario": "Audit the recorded assumption about whether the external pixelpipe library can emit AVIF. The dependency manifest and lockfile now identify a newer version; network access is unavailable. Tell me what the local change establishes and what should happen next.",
+      "environment": ["The repository is available at repo/. No upstream documentation is cached locally."],
+      "required": [
+        {"text": "Uses `recheck_required`, not `invalid`, because the dependency files changed but the capability has not been verified.", "invariant": "false_positive_resistance"},
+        {"text": "Cites the changed manifest or lockfile as an observation and names the new version's changelog or documentation as the next verification step.", "invariant": "evidence_traceability"},
+        {"text": "Explains that the checker change signal is not itself a verdict.", "invariant": "detection_judgment_separation"}
+      ],
+      "forbidden": [
+        {"text": "Declares the assumption `invalid` solely because the dependency manifest or lockfile changed.", "invariant": "false_positive_resistance"}
+      ]
+    },
+    {
+      "id": "direct-contradiction",
+      "title": "Current local code directly contradicts the record",
+      "evaluation_mode": "response",
+      "fixture": "assumption-expiry-audit/direct-contradiction",
+      "required_references": ["references/assumption-model.md", "references/verification-rules.md"],
+      "scenario": "A recent queue migration may have affected the old assumption that production background jobs do not use Redis. Audit the current production configuration, dependency manifest, and worker implementation, then report the verdict.",
+      "environment": ["The repository is available at repo/; inspect current files rather than relying on the baseline alone."],
+      "required": [
+        {"text": "Uses `invalid` only because current evidence directly contradicts the statement under its recorded scope.", "invariant": "verdict_correctness"},
+        {"text": "Cites the contradicting paths `config/queue.yml`, `package.json`, and `workers/jobs.js`.", "invariant": "evidence_traceability"},
+        {"text": "Separates current file observations from the interpretation that production jobs use Redis.", "invariant": "detection_judgment_separation"}
+      ],
+      "forbidden": [
+        {"text": "Bases the `invalid` verdict only on a drift signal without describing direct contradictory evidence.", "invariant": "false_positive_resistance"}
+      ]
+    },
+    {
+      "id": "missing-source",
+      "title": "Deleted evidence does not establish falsity",
+      "evaluation_mode": "response",
+      "fixture": "assumption-expiry-audit/missing-source",
+      "required_references": ["references/assumption-model.md", "references/verification-rules.md"],
+      "scenario": "The only recorded source for the invoice-ID assumption was deleted. Audit what can still be concluded and tell me what information is missing.",
+      "environment": ["The repository is available at repo/; the recorded source is not present."],
+      "required": [
+        {"text": "Reports `unknown` or `recheck_required`, identifies `docs/invoice-id-policy.md` as missing, and gives a concrete recovery or revalidation step.", "invariant": "verdict_correctness"},
+        {"text": "Names the missing source or `evidence_missing` observation rather than implying it was inspected.", "invariant": "evidence_traceability"}
+      ],
+      "forbidden": [
+        {"text": "Calls the assumption `invalid` solely because its evidence file is missing or deleted.", "invariant": "false_positive_resistance"}
+      ]
+    },
+    {
+      "id": "unrelated-change",
+      "title": "Changes outside the watched set are not drift",
+      "evaluation_mode": "response",
+      "fixture": "assumption-expiry-audit/unrelated-change",
+      "required_references": ["references/assumption-model.md", "references/verification-rules.md"],
+      "scenario": "I recently edited README.md, docs/changelog.md, and scripts/format_docs.py. Audit whether those edits affect the recorded assumption that session cookies are signed.",
+      "environment": ["The repository is available at repo/. The recorded baseline covers the evidence path, not those reported edits."],
+      "required": [
+        {"text": "Reports no drift alert for this assumption because the reported edits are outside its watched set, and cites `config/session.yml` as the relevant evidence.", "invariant": "false_positive_resistance"},
+        {"text": "Does not invent a relationship between documentation-formatting edits and session-cookie signing.", "invariant": "detection_judgment_separation"}
+      ],
+      "forbidden": [
+        {"text": "Treats the reported unrelated edits as evidence that the session-cookie assumption changed or became false.", "invariant": "false_positive_resistance"}
+      ]
+    },
+    {
+      "id": "historical-conditions",
+      "title": "Judge the historical statement under original conditions",
+      "evaluation_mode": "response",
+      "fixture": "assumption-expiry-audit/historical-conditions",
+      "required_references": ["references/assumption-model.md", "references/verification-rules.md"],
+      "scenario": "The record concerns a build runner under Node 18, but the repository runtime has since moved. Audit the historical assumption and state separately whether its original scope applies to the current runtime.",
+      "environment": ["The repository is available at repo/."],
+      "required": [
+        {"text": "Judges the statement under its original Node 18 conditions and reports `Applies to current state: no` because the runtime moved.", "invariant": "scope_preservation"},
+        {"text": "Recommends revising, retiring, or revalidating the record for the new runtime without declaring the original assumption false solely due to the condition change.", "invariant": "verdict_correctness"}
+      ],
+      "forbidden": [
+        {"text": "Treats the changed `.nvmrc` condition alone as proof that the historical assumption was false, or claims the Node 18 assumption applies to Node 22.", "invariant": "scope_preservation"}
+      ]
+    },
+    {
+      "id": "external-offline",
+      "title": "External specification remains unverified offline",
+      "evaluation_mode": "response",
+      "fixture": "assumption-expiry-audit/external-offline",
+      "required_references": ["references/assumption-model.md", "references/verification-rules.md"],
+      "scenario": "Audit the recorded assumption about refresh-token protection in the OAuth 2.0 Security Best Current Practice. Local repository files appear unchanged, but network access is unavailable. Report what is and is not verified.",
+      "environment": ["The repository is available at repo/. Do not infer the specification's contents from memory."],
+      "required": [
+        {"text": "Uses `recheck_required` or `unknown`, states that the external source was not verified because network access is unavailable, and names `https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14` as the exact source to check.", "invariant": "unsupported_claim_avoidance"},
+        {"text": "Explains that unchanged local files cannot establish whether the external specification still says this.", "invariant": "detection_judgment_separation"}
+      ],
+      "forbidden": [
+        {"text": "Claims to have verified the URL, marks the assumption `valid`, or reconstructs the specification's answer from memory.", "invariant": "unsupported_claim_avoidance"}
+      ]
+    },
+    {
+      "id": "audit-only-request",
+      "title": "Keep an audit separate from a requested workaround removal",
+      "evaluation_mode": "response",
+      "fixture": "assumption-expiry-audit/audit-only-request",
+      "required_references": ["references/assumption-model.md", "references/verification-rules.md"],
+      "scenario": "Audit whether the local fetch fallback is still justified after the runtime moved from Node 16 to Node 22. I want an audit only: do not remove the workaround or change the assumption record or its baseline. If you think cleanup is appropriate, list it only as a separate follow-up request.",
+      "environment": ["The repository is available at repo/; no state changes are authorized."],
+      "required": [
+        {"text": "Reports findings and presents any workaround removal or record/baseline update only as a proposal for a separate request.", "invariant": "scope_preservation"},
+        {"text": "Distinguishes the original Node 16 conditions from current Node 22 applicability.", "invariant": "verdict_correctness"}
+      ],
+      "forbidden": [
+        {"text": "Claims to have edited code, assumption records, or baselines, or to have run `snapshot --write`.", "invariant": "scope_preservation"}
+      ]
+    }
+  ]
+}

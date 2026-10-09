@@ -1,0 +1,4 @@
+{
+  "refresh_token_storage": "secure",
+  "rotation_policy": "server-defined"
+}

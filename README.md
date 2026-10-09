@@ -13,6 +13,7 @@
 | [`fact-check-ja`](skills/fact-check-ja/SKILL.md) | 記事に書く事実を一次情報で裏取りするスキル。数値、バージョン依存の挙動、比較、断定、時間で変わる記述を確認し、確認できなかった主張は範囲を狭めて書き直す。 |
 | [`agent-orchestration`](skills/agent-orchestration/SKILL.md) | Herdr セッション上で、現在のエージェントがオーケストレーションとレビューを担い、Pi `explorer` に調査、Pi `fixer` に実装を委譲するスキル。委譲が不確実性・実装リスク・レビューリスクを十分に下げる場合に使う。`HERDR_ENV=1` が必要で、`herdr` スキルと併用する。 |
 | [`continuous-improvement-loop`](skills/continuous-improvement-loop/SKILL.md) | リポジトリを反復的に改善する自律ループのスキル。各ラウンドで現状を再評価して価値のある改善を一つだけ選び、必要に応じて `agent-orchestration` を使い、レビュー・検証・コミット後に次のラウンドの妥当性を判断する。固定のタスクリストではなく、改善余地がなくなるまでの継続的な改善に使う。 |
+| [`assumption-expiry-audit`](skills/assumption-expiry-audit/SKILL.md) | 以前に受け入れた技術的な前提(ADR の前提、ワークアラウンドの理由、依存やランタイムの制約、設定上の判断)が今も成り立つかを監査するスキル。記録したベースラインからのローカルな変化を読み取り専用のチェッカーで検出し、現在の証拠にもとづいて valid / recheck required / invalid / unknown を判定する。変更や証拠の欠落だけでは invalid にしない。記事の事実確認は `fact-check-ja` の担当。詳細は[スキルの README](skills/assumption-expiry-audit/README.md)。 |
 
 ## インストール
 
@@ -48,13 +49,13 @@ GitHub Actions でも同じテストを実行する。ブログリポジトリ�
 
 ### description の評価
 
-`evals/trigger/` には、評価対象にしたスキルの description を評価するための should-trigger / should-not-trigger のテストセットを置く。現在の対象は `writing-ja`、`blog-writing-guide-ja`、`blog-ops`、`blog-idea-grilling`、`fact-check-ja` である。description を変更する前に内容をレビューし、skill-creator または Codex の評価器で検証する。
+`evals/trigger/` には、評価対象にしたスキルの description を評価するための should-trigger / should-not-trigger のテストセットを置く。現在の対象は `writing-ja`、`blog-writing-guide-ja`、`blog-ops`、`blog-idea-grilling`、`fact-check-ja`、`assumption-expiry-audit` である。description を変更する前に内容をレビューし、skill-creator または Codex の評価器で検証する。
 
 Codex で評価する場合は、`evals/trigger/run_codex_eval.py` を使う。`gpt-5.6-luna` と low reasoning で、description とユーザー要求だけからスキルを参照すべきかを判定する。これは Claude の発火率とは別の Codex 向け指標である。結果は `evals/trigger/results/` に保存され、Git では追跡しない。
 
 ### behavior の評価
 
-`evals/behavior/` では、スキルの指示に沿った次の行動や委譲内容を、決定的な検査と rubric による採点で評価する。既定の suite は `evals/behavior/agent-orchestration.json`。結果は `evals/behavior/results/` に保存され、Git では追跡しない。ケースの `evaluation_mode` は既定の `decision` なら次の行動の判断を、`response` なら、読み取り専用のコマンドでの確認だけを許し、状態を変えずに書いた実際の回答を採点する。`required_references` に skill 内の参照ファイルを挙げると、回答の前にそのファイルを読むよう指示する。`--dry-run` を付けるとモデルを呼び出さず、prompt を確認できる。
+`evals/behavior/` では、スキルの指示に沿った次の行動や委譲内容を、決定的な検査と rubric による採点で評価する。既定の suite は `evals/behavior/agent-orchestration.json`。結果は `evals/behavior/results/` に保存され、Git では追跡しない。ケースの `evaluation_mode` は既定の `decision` なら次の行動の判断を、`response` なら、読み取り専用のコマンドでの確認だけを許し、状態を変えずに書いた実際の回答を採点する。`required_references` に skill 内の参照ファイルを挙げると、回答の前にそのファイルを読むよう指示する。ケースに `fixture` を指定すると、`evals/behavior/fixtures/` 以下のリポジトリを作業領域の `repo/` にコピーして評価する。suite 単位の `axes` で rubric の集計軸を定義できる。既定以外の suite は `python3 evals/behavior/run_behavior_eval.py --suite <suite.json> --skill-path <skill-dir> --dry-run` のように実行する。`--dry-run` を付けるとモデルを呼び出さず、prompt を確認できる。
 
 ```sh
 python3 evals/behavior/run_behavior_eval.py
@@ -65,7 +66,8 @@ python3 evals/behavior/run_behavior_eval.py --dry-run
 
 Original repository content is licensed under the MIT License unless a skill
 directory specifies a different license. This includes `blog-ops`,
-`fact-check-ja`, `agent-orchestration`, and `continuous-improvement-loop`.
+`fact-check-ja`, `agent-orchestration`, `continuous-improvement-loop`, and
+`assumption-expiry-audit`.
 
 Some skills are derived from third-party works and are subject to their own
 license and attribution requirements. See the `LICENSE`, `SOURCES.md`, and,

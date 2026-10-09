@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "assumptions": [
+    {
+      "id": "node18-native-fetch",
+      "statement": "On Node 18, the build runner needs no fetch polyfill.",
+      "scope": "the build runner under Node 18",
+      "conditions": [
+        {
+          "kind": "file_regex",
+          "path": ".nvmrc",
+          "pattern": "^18(?:\\.|$)"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "file",
+          "path": "docs/runtime-assumption.md",
+          "pattern": "native fetch"
+        }
+      ],
+      "baseline": {
+        "files": {
+          ".nvmrc": "sha256:f2917caabf6ef6fa0927a589ade3a75d837b548f4b827050ad54491830b23a8c",
+          "docs/runtime-assumption.md": "sha256:290a135a6c4672e6e55dfdfd6c7b18e2abe0ccc4f8d99d6ef57132eb9bd70566"
+        }
+      }
+    }
+  ]
+}

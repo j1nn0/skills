@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "assumptions": [
+    {
+      "id": "pixelpipe-has-no-avif-output",
+      "statement": "The external pixelpipe library does not support AVIF output.",
+      "scope": "pixelpipe versions used by the image service",
+      "evidence": [
+        {
+          "kind": "url",
+          "url": "https://pixelpipe.example.invalid/docs/v4.2/output-formats",
+          "description": "pixelpipe 4.2 output-format documentation"
+        }
+      ],
+      "watch": [
+        "package.json",
+        "package-lock.json"
+      ],
+      "baseline": {
+        "files": {
+          "package-lock.json": "sha256:36c6d8ffae305e51c3b0e7b14837ca5a7a8f7223088acca67b348d6ca12bec72",
+          "package.json": "sha256:fc011aca97a93b6c94875949b495d48e3e9fa0cef8ec3f03889546aa890e658b"
+        }
+      }
+    }
+  ]
+}

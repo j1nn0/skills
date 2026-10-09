@@ -1,0 +1,3 @@
+cookie:
+  signed: true
+  same_site: lax
