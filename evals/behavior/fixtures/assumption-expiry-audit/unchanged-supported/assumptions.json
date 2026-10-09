@@ -16,12 +16,18 @@
           "path": "src/auth/middleware.py",
           "pattern": "authorize\\(session, now\\)",
           "description": "Request middleware validates a session before invoking the protected handler"
+        },
+        {
+          "kind": "file",
+          "path": "src/auth/errors.py",
+          "pattern": "class Unauthorized"
         }
       ],
       "baseline": {
         "files": {
-          "src/auth/middleware.py": "sha256:cdf344090f63e49f7e74e41079c77f861cdf3b05c5d573ab4bfa170e9c5cd7e0",
-          "src/auth/session.py": "sha256:9a94175c77d1b65da4b7f49ae860dfd8d300afdcfc7bfaf0a2114a5f38ee02e0"
+          "src/auth/errors.py": "sha256:9cdd3ed97f95be2ca84af67392e78e5a8c703fb3f61a57475b82a232b0182ad5",
+          "src/auth/middleware.py": "sha256:cb4dfbffaa1417af9a2d7276a993b2eadc2c071147a3229a3e21c7546e1100c5",
+          "src/auth/session.py": "sha256:7183868fa6b9afce08ba06f88d2f33a63ae4db65e7f4d02d5e33616de3f51c7d"
         }
       }
     }

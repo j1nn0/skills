@@ -830,7 +830,7 @@ def run_case_once(
             **_trace_fields(case, commands, skill_path),
         }
 
-    failed_items =[item for item in checks + graded_expectations if not item["passed"]]
+    failed_items = [item for item in checks + graded_expectations if not item["passed"]]
     violated_invariants = list(dict.fromkeys(item["invariant"] for item in failed_items))
     passed = not failed_items
     return {

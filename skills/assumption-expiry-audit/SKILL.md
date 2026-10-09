@@ -16,7 +16,7 @@ description: >-
 
 An **assumption** is a statement accepted as true under stated conditions on identifiable evidence. It **expires** when those conditions or that evidence change. Expiry is a reason to investigate, never a verdict: the audit ends on evidence, not on drift.
 
-The audit is read-only. Collect evidence by reading files, running read-only `git` commands, and running the checker; running project scripts, builds, or tests needs the user's go-ahead. Changing code, dependencies, assumption records, baselines, or architecture decisions, removing a workaround, and committing are separate requests the user makes explicitly.
+The audit is read-only. Collect evidence by reading files, running read-only `git` commands, and running the checker; running project scripts, builds, or tests needs the user's go-ahead. A `git_commit` baseline makes git run the clean filters configured for the repository; for a repository whose git configuration you do not trust, use a `files` baseline. Changing code, dependencies, assumption records, baselines, or architecture decisions, removing a workaround, and committing are separate requests the user makes explicitly.
 
 ## Entry points
 

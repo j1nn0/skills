@@ -28,13 +28,17 @@ or one bare record object (handy for a one-off record piped on stdin). `schema_v
 
 Unknown fields are ignored. Record only evidence that was actually observed; when the source of an assumption is unknown, say so in a `note` evidence item instead of guessing a file or URL.
 
+Keep the watched set narrow: list the files whose change would bear on the statement. A broad glob such as `src/**` buries the one relevant signal among unrelated edits.
+
 ## Paths
 
 Every path (`evidence[].path`, `conditions[].path`, `watch[]`, `baseline.files` keys) is repo-relative, POSIX-separated, and stays inside the repository: no absolute paths, no `..` segments, and no symlink resolving outside the repository root. A record with an unsafe path is reported as `record_error` and not evaluated.
 
 `watch` entries may use `*` (within one path segment), `?`, and `**` (zero or more directories). The `.git` directory is never matched.
 
-The **watched set** of a record is: every file evidence path, every condition path, and every file matching a `watch` entry.
+The **watched set** of a record is: every file evidence path, every condition path, every file matching a `watch` entry, and every `baseline.files` path.
+
+`--records` is a path from the current directory, not from `--repo`.
 
 ## Evidence
 
@@ -42,7 +46,7 @@ Each item has a `kind`; `description` is optional on `file` and `url` and requir
 
 | Kind | Fields | Checker behaviour |
 | --- | --- | --- |
-| `file` | `path` (required), `pattern` (optional regex) | Reports whether the file exists now and, with `pattern`, whether the regex still matches its content (`re.search`, multiline). |
+| `file` | `path` (required), `pattern` (optional regex) | Reports whether the file exists now and, with `pattern`, whether the regex matches its current content (`re.search`, multiline). Prefer a `pattern` anchor to line numbers, which go stale with unrelated edits. |
 | `url` | `url` (required) | Never fetched. Listed under `agent_checks` for the agent to verify. |
 | `note` | `description` (required) | Evidence with no locatable source, such as a manual observation. Listed under `agent_checks`. |
 
@@ -50,7 +54,7 @@ An unrecognised `kind` is reported as `unsupported` and listed under `agent_chec
 
 ## Conditions
 
-Conditions state the applicability scope in a form the checker can test against the current tree.
+Conditions state **when** the assumption applies (a dependency version, a runtime, an environment) in a form the checker can test against the current tree. The facts that show the statement is true belong in `evidence`: a condition that restates the evidence turns a later contradiction into an apparent change of scope.
 
 | Kind | Fields | Holds when |
 | --- | --- | --- |
@@ -58,16 +62,16 @@ Conditions state the applicability scope in a form the checker can test against 
 | `json_value` | `path`, `pointer` (RFC 6901), `equals` (any JSON value) | The file parses as JSON and the value at `pointer` equals `equals`. |
 | `text` | `description` | Not machine-checkable; listed under `agent_checks`. |
 
-`description` is optional on `file_regex` and `json_value`. Condition results are `holds`, `does_not_hold` (including a missing JSON pointer), `unresolvable` (file missing or unparseable), or `manual` (`text`). A condition that no longer holds means the current state has left the assumption's recorded scope; it does not mean the assumption was false.
+`description` is optional on `file_regex` and `json_value`. `equals` is literal: a manifest range such as `"^8.11.0"` is compared as text, not as a version range. To pin the installed version, point at the lockfile's resolved version instead. Condition results are `holds`, `does_not_hold` (including a missing JSON pointer), `unresolvable` (file missing or unparseable), or `manual` (`text`). A condition that no longer holds means the current state has left the assumption's recorded scope; it does not mean the assumption was false.
 
 ## Baseline
 
 | Field | Meaning |
 | --- | --- |
 | `files` | Object mapping each watched path to `"sha256:<hex>"`, or `null` when the path did not exist. Written by `snapshot`. |
-| `git_commit` | A commit the assumption was accepted against. Drift is the difference between that commit and the working tree (including uncommitted and untracked files) over the watched set. |
+| `git_commit` | A commit the assumption was accepted against. Drift is the difference between that commit and the working tree (including uncommitted and untracked files) over the watched set. Git cannot know the earlier state of paths it ignores (local config, `.env`); those produce an `ignored_by_git` notice unless `files` covers them. |
 
-Either or both may be present; when both are, both are compared. `check --since <rev>` replaces the record baselines with `<rev>` for one run.
+Either or both may be present; when both are, both are compared. `verification-rules.md` describes how a `git_commit` comparison treats line endings and git filters. `check --since <rev>` replaces the record baselines with `<rev>` for one run.
 
 Create or refresh `files` only on explicit request, and only after the assumption has been verified against the current state: a refreshed baseline asserts "accepted against this state". `snapshot` prints the updated records to stdout; `snapshot --write` replaces the records file.
 
@@ -95,8 +99,8 @@ Full record:
       "statement": "The pg driver in use does not support query pipelining, so batch inserts use a manual transaction loop.",
       "scope": "api service with pg 8.11.x on Node 20",
       "conditions": [
-        {"kind": "json_value", "path": "package.json", "pointer": "/dependencies/pg", "equals": "^8.11.0"},
-        {"kind": "file_regex", "path": ".nvmrc", "pattern": "^20\\."}
+        {"kind": "json_value", "path": "package-lock.json", "pointer": "/packages/node_modules~1pg/version", "equals": "8.11.5"},
+        {"kind": "file_regex", "path": ".nvmrc", "pattern": "^v?20(?:\\.|$)"}
       ],
       "evidence": [
         {"kind": "file", "path": "src/db/batch.ts", "pattern": "manual transaction loop", "description": "Workaround and its comment"},

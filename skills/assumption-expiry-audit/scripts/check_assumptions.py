@@ -474,16 +474,6 @@ def signal(signal_type, path, source, detail=None):
     return result
 
 
-def watch_matches_path(watch, path):
-    for entry in watch:
-        if entry["glob"] and entry["regex"].fullmatch(path):
-            return True
-        if not entry["glob"] and entry["path"] == path:
-            return True
-    return False
-
-
-
 def watch_glob_matches_path(watch, path):
     return any(entry["glob"] and entry["regex"].fullmatch(path) for entry in watch)
 
@@ -495,6 +485,8 @@ def git_pathspecs(validated):
     for entry in validated["watch"]:
         magic = "(glob)" if entry["glob"] else "(literal)"
         specs.add(magic + entry["path"])
+    for path in validated["baseline_files"] or {}:
+        specs.add("(literal)" + path)
     return [":" + spec for spec in sorted(specs)]
 
 
@@ -539,7 +531,7 @@ def parse_git_diff(output):
     return changes
 
 
-def git_signals(root, revision, validated):
+def git_signals(root, revision, validated, covered_paths):
     notices = []
     if not git_revision_available(root, revision):
         return [], [("baseline_unavailable", None, "baseline.git_commit", "git revision is unavailable")]
@@ -554,6 +546,7 @@ def git_signals(root, revision, validated):
                 "--no-ext-diff",
                 "--no-textconv",
                 "--no-renames",
+                "--relative",
                 "--name-status",
                 "-z",
                 revision,
@@ -565,9 +558,13 @@ def git_signals(root, revision, validated):
             root,
             ["ls-files", "--others", "--exclude-standard", "-z", "--", *pathspecs],
         )
+        ignored = run_git(
+            root,
+            ["ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--", *pathspecs],
+        )
     except (OSError, ValueError, subprocess.SubprocessError):
         return [], [("baseline_unavailable", None, "baseline.git_commit", "git could not inspect the watched set")]
-    if diff.returncode != 0 or untracked.returncode != 0:
+    if diff.returncode != 0 or untracked.returncode != 0 or ignored.returncode != 0:
         return [], [("baseline_unavailable", None, "baseline.git_commit", "git could not inspect the watched set")]
 
     results = []
@@ -588,7 +585,7 @@ def git_signals(root, revision, validated):
         if status.startswith("D"):
             kind = "deleted"
         elif status.startswith("A"):
-            kind = "added" if watch_matches_path(validated["watch"], path) else "modified"
+            kind = "added"
         else:
             kind = "modified"
         results.append(signal(kind, path, "baseline.git_commit", "git status " + status))
@@ -598,8 +595,21 @@ def git_signals(root, revision, validated):
         path = os.fsdecode(raw_path)
         if skipped_outside_root(path):
             continue
-        kind = "added" if watch_matches_path(validated["watch"], path) else "modified"
+        kind = "added"
         results.append(signal(kind, path, "baseline.git_commit", "untracked file"))
+    for raw_path in ignored.stdout.split(b"\x00"):
+        if not raw_path:
+            continue
+        path = os.fsdecode(raw_path)
+        if path not in covered_paths:
+            notices.append(
+                (
+                    "ignored_by_git",
+                    path,
+                    "baseline.git_commit",
+                    "git cannot establish its baseline state for this ignored path",
+                )
+            )
     return results, notices
 
 
@@ -630,7 +640,7 @@ def evaluate_evidence(root, validated):
                 elif evidence["pattern_re"].search(text) is None:
                     result["status"] = "anchor_missing"
                     result["detail"] = "pattern does not match current file content"
-                    signals.append(signal("evidence_anchor_missing", path, "evidence", "pattern no longer matches"))
+                    signals.append(signal("evidence_anchor_missing", path, "evidence", "pattern does not match current file content"))
                 else:
                     result["status"] = "anchor_found"
         elif kind == "url":
@@ -710,7 +720,7 @@ def evaluate_conditions(root, validated):
     return results, signals, agent_checks
 
 
-def compare_file_baseline(current, baseline_files, watch):
+def compare_file_baseline(current, baseline_files):
     results = []
     paths = sorted(set(current) | set(baseline_files))
     for path in paths:
@@ -720,7 +730,7 @@ def compare_file_baseline(current, baseline_files, watch):
             continue
         if before == "__absent_from_baseline__":
             if after not in (None, "__not_watched_now__"):
-                kind = "added" if watch_matches_path(watch, path) else "modified"
+                kind = "added"
                 results.append(signal(kind, path, "baseline.files", "path was not in the file baseline"))
         elif after == "__not_watched_now__":
             # Old snapshot paths remain relevant until explicitly re-snapshotted.
@@ -728,7 +738,7 @@ def compare_file_baseline(current, baseline_files, watch):
         elif before is not None and after is None:
             results.append(signal("deleted", path, "baseline.files", "file no longer exists"))
         elif before is None and after is not None:
-            kind = "added" if watch_matches_path(watch, path) else "modified"
+            kind = "added"
             results.append(signal(kind, path, "baseline.files", "file now exists"))
         elif before != after:
             results.append(signal("modified", path, "baseline.files", "SHA-256 differs from baseline"))
@@ -753,7 +763,16 @@ def make_record_error(record, error):
 def evaluate_record(record, root, since=None):
     try:
         validated = validate_record(record, root)
-        current, outside_notices = watched_state(root, validated, include_baseline_paths=since is None)
+        current, outside_notices = watched_state(root, validated, include_baseline_paths=True)
+        if not current:
+            outside_notices.append(
+                (
+                    "empty_watched_set",
+                    None,
+                    "watch",
+                    "no paths are covered by file evidence, conditions, watch matches, or baseline.files",
+                )
+            )
     except RecordError as error:
         return make_record_error(record, error)
     except OSError:
@@ -767,20 +786,22 @@ def evaluate_record(record, root, since=None):
     baseline = validated["baseline"] if since is None else None
     usable_baseline = False
     if since is not None:
-        git_changes, git_notices = git_signals(root, since, validated)
+        git_changes, git_notices = git_signals(root, since, validated, set())
         signals.extend(git_changes)
         notices.extend(git_notices)
         usable_baseline = not git_notices
     elif isinstance(baseline, dict):
         if "files" in baseline:
             usable_baseline = True
-            signals.extend(compare_file_baseline(current, validated["baseline_files"], validated["watch"]))
+            signals.extend(compare_file_baseline(current, validated["baseline_files"]))
         if "git_commit" in baseline:
-            git_changes, git_notices = git_signals(root, baseline["git_commit"], validated)
+            git_changes, git_notices = git_signals(root, baseline["git_commit"], validated, set(validated["baseline_files"] or {}))
             signals.extend(git_changes)
             notices.extend(git_notices)
             if not git_notices:
                 usable_baseline = True
+    if not current or any(notice[0] == "ignored_by_git" for notice in notices):
+        usable_baseline = False
 
     if signals:
         status = "changed"

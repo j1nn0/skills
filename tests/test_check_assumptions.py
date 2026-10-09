@@ -43,7 +43,7 @@ class CheckAssumptionsTest(unittest.TestCase):
         path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return path
 
-    def run_cli(self, command="check", records=None, records_path=None, args=(), input_text=None):
+    def run_cli(self, command="check", records=None, records_path=None, args=(), input_text=None, repo=None):
         if records_path is None:
             if records is None:
                 raise AssertionError("records or records_path is required")
@@ -54,7 +54,7 @@ class CheckAssumptionsTest(unittest.TestCase):
                 str(CHECKER),
                 command,
                 "--repo",
-                str(self.repo),
+                str(repo or self.repo),
                 "--records",
                 str(records_path),
                 *args,
@@ -202,6 +202,147 @@ class CheckAssumptionsTest(unittest.TestCase):
         self.assertIn(("modified", "pyproject.toml"), {(item["type"], item.get("path")) for item in signals})
         self.assertIn(("added", "src/new.py"), {(item["type"], item.get("path")) for item in signals})
         self.assertTrue(all(item["source"] == "baseline.git_commit" for item in signals))
+
+    def test_git_baseline_reports_ignored_watched_file_as_uncovered(self):
+        (self.repo / ".gitignore").write_text("ignored.txt\n", encoding="utf-8")
+        commit = self.commit_fixture()
+        (self.repo / "ignored.txt").write_text("created after baseline\n", encoding="utf-8")
+        record = self.record(watch=["ignored.txt"], baseline={"git_commit": commit})
+
+        for args in ((), ("--since", commit)):
+            with self.subTest(args=args):
+                completed = self.run_check(record, args=args)
+                assumption = self.result(completed)["assumptions"][0]
+                self.assertEqual(1, completed.returncode)
+                self.assertEqual("no_baseline", assumption["status"])
+                self.assertEqual([], assumption["signals"])
+                self.assertIn(
+                    {
+                        "type": "ignored_by_git",
+                        "source": "baseline.git_commit",
+                        "detail": "git cannot establish its baseline state for this ignored path",
+                        "path": "ignored.txt",
+                    },
+                    assumption["notices"],
+                )
+
+    def test_git_baseline_does_not_notice_ignored_file_covered_by_files_baseline(self):
+        (self.repo / ".gitignore").write_text("ignored.txt\n", encoding="utf-8")
+        commit = self.commit_fixture()
+        (self.repo / "ignored.txt").write_text("captured by files baseline\n", encoding="utf-8")
+        record = self.record(
+            watch=["ignored.txt"],
+            baseline={
+                "git_commit": commit,
+                "files": {
+                    "manifest.json": self.digest("manifest.json"),
+                    "ignored.txt": self.digest("ignored.txt"),
+                },
+            },
+        )
+
+        completed = self.run_check(record)
+        assumption = self.result(completed)["assumptions"][0]
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        self.assertEqual("unchanged", assumption["status"])
+        self.assertNotIn("ignored_by_git", [notice["type"] for notice in assumption["notices"]])
+
+        # --since replaces the record baselines, so baseline.files no longer covers the ignored path.
+        completed = self.run_check(record, args=("--since", commit))
+        assumption = self.result(completed)["assumptions"][0]
+        self.assertEqual("no_baseline", assumption["status"])
+        self.assertIn("ignored_by_git", [notice["type"] for notice in assumption["notices"]])
+
+    def test_empty_watched_set_has_no_baseline(self):
+        record = self.record(
+            evidence=[{"kind": "note", "description": "Manual evidence only"}],
+            conditions=[{"kind": "text", "description": "A manual condition"}],
+            watch=[],
+            baseline={"files": {}},
+        )
+
+        completed = self.run_check(record)
+        assumption = self.result(completed)["assumptions"][0]
+        self.assertEqual(1, completed.returncode)
+        self.assertEqual("no_baseline", assumption["status"])
+        self.assertIn(
+            {"type": "empty_watched_set", "source": "watch", "detail": "no paths are covered by file evidence, conditions, watch matches, or baseline.files"},
+            assumption["notices"],
+        )
+
+    def test_since_includes_baseline_files_paths_in_git_pathspecs(self):
+        path = self.repo / "baseline-only.txt"
+        path.write_text("before\n", encoding="utf-8")
+        commit = self.commit_fixture()
+        record = self.record(
+            evidence=[{"kind": "note", "description": "Manual evidence only"}],
+            watch=[],
+            baseline={"files": {"baseline-only.txt": self.digest("baseline-only.txt")}},
+        )
+        path.write_text("after\n", encoding="utf-8")
+
+        completed = self.run_check(record, args=("--since", commit))
+        assumption = self.result(completed)["assumptions"][0]
+        self.assertEqual(1, completed.returncode)
+        self.assertEqual("changed", assumption["status"])
+        self.assertIn(
+            ("modified", "baseline-only.txt"),
+            {(item["type"], item.get("path")) for item in assumption["signals"]},
+        )
+
+    def test_git_diff_paths_are_relative_to_repo_subdirectory(self):
+        subdir = self.repo / "sub"
+        subdir.mkdir()
+        (self.repo / ".gitignore").write_text("sub/ignored.txt\n", encoding="utf-8")
+        watched = subdir / "f.txt"
+        watched.write_text("before\n", encoding="utf-8")
+        commit = self.commit_fixture()
+        record = self.record(
+            evidence=[{"kind": "file", "path": "f.txt"}],
+            watch=["new.txt", "ignored.txt"],
+            baseline={"git_commit": commit},
+        )
+        watched.write_text("after\n", encoding="utf-8")
+        (subdir / "new.txt").write_text("untracked after baseline\n", encoding="utf-8")
+        (subdir / "ignored.txt").write_text("ignored after baseline\n", encoding="utf-8")
+
+        completed = self.run_check(record, repo=subdir)
+        assumption = self.result(completed)["assumptions"][0]
+        self.assertEqual(1, completed.returncode)
+        self.assertEqual(
+            [("added", "new.txt"), ("modified", "f.txt")],
+            [(item["type"], item.get("path")) for item in assumption["signals"]],
+        )
+        self.assertIn(
+            {"type": "ignored_by_git", "source": "baseline.git_commit", "detail": "git cannot establish its baseline state for this ignored path", "path": "ignored.txt"},
+            assumption["notices"],
+        )
+
+    def test_file_present_but_absent_from_baseline_is_added_without_watch_glob(self):
+        new_file = self.repo / "new-evidence.txt"
+        new_file.write_text("new evidence\n", encoding="utf-8")
+        record = self.record(
+            evidence=[{"kind": "file", "path": "new-evidence.txt"}],
+            baseline={"files": {"manifest.json": self.digest("manifest.json")}},
+        )
+
+        completed = self.run_check(record)
+        assumption = self.result(completed)["assumptions"][0]
+        self.assertEqual(1, completed.returncode)
+        self.assertIn(
+            ("added", "new-evidence.txt"),
+            {(item["type"], item.get("path")) for item in assumption["signals"]},
+        )
+
+    def test_missing_evidence_anchor_detail_describes_current_content(self):
+        record = self.record(
+            evidence=[{"kind": "file", "path": "manifest.json", "pattern": "not-present"}],
+        )
+
+        completed = self.run_check(record)
+        assumption = self.result(completed)["assumptions"][0]
+        signal = next(item for item in assumption["signals"] if item["type"] == "evidence_anchor_missing")
+        self.assertEqual("pattern does not match current file content", signal["detail"])
 
     def test_since_replaces_record_baseline_for_one_run(self):
         dependency = self.repo / "dependency.txt"

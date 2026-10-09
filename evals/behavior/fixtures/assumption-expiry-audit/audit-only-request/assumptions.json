@@ -28,7 +28,7 @@
         "files": {
           ".nvmrc": "sha256:bd5e559e3c40c5b31c432b9a8c928e7fa6b12fe9772c1d623628264ce0e438e5",
           "package.json": "sha256:3240b7977644a375910b7a04827bc8e543bfae835775b8ec2cb4eae59657cadc",
-          "src/compat.js": "sha256:de05a08db75e9253b922316d8412c75f588b7cb768378ab110f8ca6a4698a9ba"
+          "src/compat.js": "sha256:e17b3b1b09620bff519a30483efc41d8ce5254d9bf98db56f74a69b62fa4eef8"
         }
       }
     }

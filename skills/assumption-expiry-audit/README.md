@@ -82,5 +82,7 @@ The agent's report for it, offline:
 - The checker sees only the local tree. Upstream behaviour, specifications, and hosted services can change with no local trace; such assumptions stay `recheck_required` or `unknown` until the agent checks the source.
 - Drift detection is only as good as the watched set: a relevant file left out of `evidence`, `conditions`, and `watch` is not monitored.
 - Conditions cover regex matches and exact JSON values. Version ranges, lockfile semantics, and other formats are not interpreted; the agent reads them.
-- `git_commit` baselines run the user's own `git` with external diff and textconv drivers disabled; filters configured in the user's git config still apply.
+- `git_commit` baselines compare content as git sees it: external diff and textconv drivers are disabled, but line-ending conversion and the clean filters configured for the repository (git-lfs and the like) apply, and git runs those filter programs. Use a `files` baseline for repositories whose git configuration you do not trust.
+- Git cannot know the earlier state of files it ignores (local config, `.env`). A `git_commit` baseline reports them as `ignored_by_git` and the record as `no_baseline` unless a `files` baseline covers them.
+- Evidence `pattern` anchors are checked against the working tree only, never at the baseline revision.
 - Verdicts are agent judgments under written criteria, not proofs. The behavior evaluation suite measures how consistently a model follows them.

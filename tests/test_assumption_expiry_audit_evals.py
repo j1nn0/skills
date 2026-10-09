@@ -130,8 +130,9 @@ class AssumptionExpiryAuditEvalTest(unittest.TestCase):
                     stored_record = json.loads((repo / "assumptions.json").read_text(encoding="utf-8"))["assumptions"][0]
                     evidence_paths = [item["path"] for item in stored_record["evidence"] if item["kind"] == "file"]
                     self.assertIn("src/auth/middleware.py", evidence_paths)
+                    self.assertIn("src/auth/errors.py", evidence_paths)
                     self.assertEqual(
-                        ["src/auth/middleware.py", "src/auth/session.py"],
+                        ["src/auth/errors.py", "src/auth/middleware.py", "src/auth/session.py"],
                         sorted(stored_record["baseline"]["files"]),
                     )
                 elif case["id"] == "dependency-changed":
