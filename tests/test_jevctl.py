@@ -1046,6 +1046,24 @@ class ExplorerGateTest(unittest.TestCase):
         )
         self.assertFalse(captured_prompt.exists())
 
+    def test_disabled_doctor_reports_boolean_gate_enablement_for_routing(self):
+        (self.bin_dir / "python3").symlink_to(sys.executable)
+        env = dict(self.env, JEVCTL_ENABLED="0")
+        completed = subprocess.run(
+            [str(JEVCTL), "doctor"],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+        doctor = self.parse_single_json(completed)
+
+        for gate in ("completion", "explorer"):
+            with self.subTest(gate=gate):
+                enabled = doctor["gates"][gate]["enabled"]
+                self.assertIs(type(enabled), bool)
+                self.assertFalse(enabled)
+
     def test_request_uses_restricted_settled_state_and_system_one_questions(self):
         capture_path = self.root / "request.json"
         payload = self.explorer_input(untrusted_metadata="must not be forwarded")

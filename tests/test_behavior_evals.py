@@ -111,6 +111,9 @@ class BehaviorEvalSuiteTest(unittest.TestCase):
             self.assertIn(operation, batches_routing)
         self.assertIn("authoritative", batches_routing)
 
+        self.assertIn("including writing the synthesis of collected batch results", batches_routing)
+        self.assertIn("the summary below does not replace it", batches_routing)
+
         workflow_trigger = " ".join(workflow.split()).lower()
         self.assertIn(
             "if parallel explorers may be appropriate, read [`parallel.md`](references/parallel.md) "
@@ -125,6 +128,26 @@ class BehaviorEvalSuiteTest(unittest.TestCase):
             self.assertIn(summary, batches)
         for detail in ("Before completing convergence", "topic names alone", "source association"):
             self.assertNotIn(detail, skill_text)
+
+    def test_optional_jev_gates_check_effective_enablement_before_reading_reference(self):
+        skill_text = SKILL_PATH.read_text(encoding="utf-8")
+        section = skill_text.split("### Optional Jev gates\n", 1)[1].split("\n### ", 1)[0]
+
+        self.assertIn("At each gate point below, unless the gate is already known to be disabled", section)
+        self.assertIn("run `scripts/jevctl doctor` (diagnostic only; no model request)", section)
+        self.assertIn("check that gate's `gates.<gate>.enabled`", section)
+        self.assertIn("Skip a disabled gate without reading its reference.", section)
+        self.assertIn("Before invoking an enabled gate, read its reference;", section)
+        for reference in ("[`jev.md`](references/jev.md)", "[`explorer-gate.md`](references/explorer-gate.md)"):
+            with self.subTest(reference=reference):
+                self.assertIn(reference, section)
+
+        fixer_when = skill_text.split("## Fixer\n", 1)[1].split("### Handoff", 1)[0]
+        self.assertIn(
+            'When the strategy rests on Explorer evidence, apply the Explorer Gate check in "Optional Jev gates" '
+            "before the fixer handoff.",
+            " ".join(fixer_when.split()),
+        )
 
     def test_critical_invariants_keep_their_critical_flag(self):
         critical = {

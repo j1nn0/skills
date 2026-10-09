@@ -86,7 +86,7 @@ Only read-only Explorer work admitted under [`parallel.md`](references/parallel.
 
 ### Parallel Explorer batches
 
-Read [`parallel.md`](references/parallel.md) before handling Parallel Explorer admission, dispatch, collection, resume, or convergence; it is authoritative for those operations. Use only two or three independent read-only Explorer units under one parent objective; a disabled or rejected batch falls back to sequential exploration. Give each unit a standalone prompt, validate each latest complete result independently, and do not share sibling raw outputs. Preserve failures as explicit gaps and synthesize once in the orchestrator, separating observed evidence from Explorer interpretation and preserving provenance and contradictions rather than voting.
+Read [`parallel.md`](references/parallel.md) before handling Parallel Explorer admission, dispatch, collection, resume, or convergence, including writing the synthesis of collected batch results; it is authoritative for those operations, and the summary below does not replace it. Use only two or three independent read-only Explorer units under one parent objective; a disabled or rejected batch falls back to sequential exploration. Give each unit a standalone prompt, validate each latest complete result independently, and do not share sibling raw outputs. Preserve failures as explicit gaps and synthesize once in the orchestrator, separating observed evidence from Explorer interpretation and preserving provenance and contradictions rather than voting.
 
 Run the optional Explorer Gate at most once after synthesis (see [`explorer-gate.md`](references/explorer-gate.md)). Parallel investigation does not permit parallel Fixers, shared-tree writes, or skipping sequential implementation, diff review, verification, or the Completion Gate.
 
@@ -299,7 +299,9 @@ when:
 - multiple files or components must change;
 - independent implementation reduces implementation or review risk.
 
-Send unresolved questions to the explorer first.
+Send unresolved questions to the explorer first. When the strategy rests on
+Explorer evidence, apply the Explorer Gate check in "Optional Jev gates" before
+the fixer handoff.
 
 ### Handoff
 
@@ -529,7 +531,7 @@ unnecessary access to secrets without explicit permission.
 
 ### Optional Jev gates
 
-Jev gates advise; you decide. Read the gate's reference before invoking it; it is authoritative for eligibility, payload, modes, and fallback:
+Jev gates advise; you decide. At each gate point below, unless the gate is already known to be disabled, run `scripts/jevctl doctor` (diagnostic only; no model request) and check that gate's `gates.<gate>.enabled`. Skip a disabled gate without reading its reference. Before invoking an enabled gate, read its reference; it is authoritative for eligibility, payload, modes, and fallback:
 
 - the Explorer Gate ([`explorer-gate.md`](references/explorer-gate.md)) runs only after you review and settle Explorer evidence, before implementation;
 - the Completion Gate ([`jev.md`](references/jev.md)) runs only after you review the actual diff and deterministic project verification passes.
