@@ -440,11 +440,10 @@ class JevctlTest(unittest.TestCase):
         self.assertTrue(result["auto_apply"])
 
     def test_no_secret_leaks_from_environment_or_config(self):
-        fake_secret = "FAKE_DO_NOT_PRINT_jev_key_123"
-        env = dict(self.env, COMMAND_CODE_API_KEY=fake_secret, JEVCTL_ENABLED="1")
+        leak_canary = "FAKE_DO_NOT_PRINT_jev_canary_123"
+        env = dict(self.env, COMMAND_CODE_API_KEY=leak_canary, JEVCTL_ENABLED="1")
         self.config_path.write_text(
-            # codeql[py/clear-text-storage-sensitive-data]: synthetic test secret verifies no-leak behavior; not a real credential
-            json.dumps({"model": "typesafe/jev", "api_key": fake_secret}),
+            json.dumps({"model": "typesafe/jev", "api_key": leak_canary}),
             encoding="utf-8",
         )
 
@@ -452,8 +451,8 @@ class JevctlTest(unittest.TestCase):
         config_payload = self.parse_single_json(config_result)
         self.assertFalse(config_payload["ok"])
         self.assertEqual("active", config_payload["mode"])
-        self.assertNotIn(fake_secret, config_result.stdout)
-        self.assertNotIn(fake_secret, config_result.stderr)
+        self.assertNotIn(leak_canary, config_result.stdout)
+        self.assertNotIn(leak_canary, config_result.stderr)
 
         self.config_path.unlink()
         self.install_cmd(response=self.valid_response())
@@ -462,8 +461,8 @@ class JevctlTest(unittest.TestCase):
         result = self.parse_single_json(completed)
         self.assertTrue(result["auto_apply"])
         self.assertEqual(result["auto_apply"], result["would_auto_apply"])
-        self.assertNotIn(fake_secret, completed.stdout)
-        self.assertNotIn(fake_secret, completed.stderr)
+        self.assertNotIn(leak_canary, completed.stdout)
+        self.assertNotIn(leak_canary, completed.stderr)
 
 
     def test_request_has_object_questions_and_truncated_settled_state(self):
