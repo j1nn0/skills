@@ -443,7 +443,7 @@ class JevctlTest(unittest.TestCase):
         fake_secret = "FAKE_DO_NOT_PRINT_jev_key_123"
         env = dict(self.env, COMMAND_CODE_API_KEY=fake_secret, JEVCTL_ENABLED="1")
         self.config_path.write_text(
-            json.dumps({"model": "typesafe/jev", "api_key": fake_secret}),
+            json.dumps({"model": "typesafe/jev", "api_key": fake_secret}),  # codeql[py/clear-text-storage-sensitive-data]: synthetic test secret verifies no-leak behavior; not a real credential
             encoding="utf-8",
         )
 
