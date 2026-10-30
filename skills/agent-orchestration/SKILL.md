@@ -45,6 +45,14 @@ conversation, so each role boundary only exists if the handoff prompt states it.
 
 ## Startup
 
+Resolve all `references/` and `scripts/` paths relative to the directory containing
+this `SKILL.md`, using its absolute path supplied by the harness, not the project
+working directory. Invoke bundled scripts by their resolved absolute paths; the
+`skills/agent-orchestration/scripts/` examples in `startup.md` are repository-root
+paths and refer to this skill directory's `scripts/` when installed. Never search
+the filesystem to rediscover this skill; if its path or a required resource is
+unavailable, report the issue rather than expanding the search.
+
 Delegation requires a Herdr-managed pane:
 
 ```bash
